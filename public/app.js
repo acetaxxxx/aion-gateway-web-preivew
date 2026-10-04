@@ -74,7 +74,29 @@ async function showPreview() {
   document.querySelector('#preview-shell').classList.remove('hidden');
   document.querySelector('#preview-name').textContent = entry.title;
   const previewUrl = `/preview/${encodeURIComponent(entry.slug)}/index.html`;
-  document.querySelector('#preview-frame').src = previewUrl;
+  const frame = document.querySelector('#preview-frame');
+  const status = document.querySelector('#preview-status');
+  const events = new EventSource(`/api/previews/${encodeURIComponent(entry.slug)}/events`);
+  function update(event) {
+    const state = JSON.parse(event.data);
+    if (!state.available) {
+      frame.removeAttribute('src');
+      frame.classList.add('hidden');
+      status.textContent = '等待 Agent 完成網頁…';
+      return;
+    }
+    frame.classList.remove('hidden');
+    frame.src = `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
+    status.textContent = '即時預覽已連線，檔案修改後會自動更新。';
+  }
+  events.addEventListener('ready', update);
+  events.addEventListener('reload', update);
+  events.addEventListener('disabled', () => {
+    events.close(); frame.removeAttribute('src'); frame.classList.add('hidden');
+    status.textContent = '此預覽已停用。';
+  });
+  events.onerror = () => { status.textContent = '正在重新連接即時預覽…'; };
+  window.addEventListener('pagehide', () => events.close(), { once: true });
   document.querySelector('#open-preview').href = `/p/${encodeURIComponent(entry.slug)}`;
 }
 

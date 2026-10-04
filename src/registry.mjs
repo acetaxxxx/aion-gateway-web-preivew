@@ -59,6 +59,26 @@ export class PreviewRegistry {
     });
   }
 
+  async ensure({ relativePath, slug, title, teamId, conversationId }) {
+    return this.#mutate(async (entries) => {
+      const named = slug && entries.find((entry) => entry.slug === slug);
+      if (named && named.relativePath !== relativePath) {
+        throw Object.assign(new Error('This slug belongs to a different preview'), { statusCode: 409 });
+      }
+      const existing = named || entries.find((entry) => entry.relativePath === relativePath);
+      if (existing) return existing;
+      const id = randomUUID();
+      const cleanTitle = title?.trim().slice(0, 120) || relativePath.split('/').at(-1);
+      const entry = {
+        id, slug: slug || makeSlug(cleanTitle, id), title: cleanTitle, relativePath,
+        enabled: true, createdAt: new Date().toISOString(),
+        ...(teamId ? { teamId } : {}), ...(conversationId ? { conversationId } : {}),
+      };
+      entries.push(entry);
+      return entry;
+    });
+  }
+
   async #mutate(change) {
     const operation = this.#queue.then(async () => {
       const entries = await this.list();

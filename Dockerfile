@@ -7,7 +7,8 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 RUN mkdir -p /gateway-data && chown node:node /gateway-data
-COPY --chown=node:node package.json ./
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --chown=node:node src ./src
 COPY --chown=node:node public ./public
 

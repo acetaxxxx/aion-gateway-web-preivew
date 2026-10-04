@@ -14,5 +14,8 @@ server.listen(config.port, '0.0.0.0', () => {
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  process.on(signal, () => {
+    server.close(() => process.exit(0));
+    server.closeAllConnections();
+  });
 }

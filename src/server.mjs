@@ -5,6 +5,9 @@ import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authenticateRequest } from './access.mjs';
 import { discoverCandidates, resolvePreviewDirectory, resolvePreviewFile, verifyPreviewFile } from './filesystem.mjs';
+import { Previews } from './previews.mjs';
+import { PreviewChanges } from './changes.mjs';
+import { authenticateMcp, handleMcp } from './mcp.mjs';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const MAX_BODY_BYTES = 16 * 1024;
@@ -96,12 +99,20 @@ function adminPage(slug) {
   ));
 }
 
-export function createGatewayServer({ config, registry, authenticate = (request) => authenticateRequest(request, config) }) {
-  return createServer(async (request, response) => {
+export function createGatewayServer({ config, registry, changes = new PreviewChanges({ config, registry }), authenticate = (request) => authenticateRequest(request, config) }) {
+  const previews = new Previews(config, registry);
+  const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url, 'http://gateway.local');
       if (url.pathname === '/healthz' && request.method === 'GET') {
         return sendJson(response, 200, { status: 'ok' });
+      }
+
+      if (url.pathname === '/mcp') {
+        if (!config.mcpToken) return sendJson(response, 503, { error: 'Agent MCP is not configured' });
+        if (!authenticateMcp(request, config)) return sendJson(response, 401, { error: 'Agent MCP authentication required' });
+        const body = request.method === 'POST' ? await readJson(request) : undefined;
+        return await handleMcp(request, response, { config, registry, previews, body });
       }
 
       const identity = await authenticate(request);
@@ -158,9 +169,30 @@ export function createGatewayServer({ config, registry, authenticate = (request)
         if (body.title !== undefined && body.title !== null && typeof body.title !== 'string') {
           return sendJson(response, 400, { error: 'title must be a string' });
         }
-        const validated = await resolvePreviewDirectory(config.previewScanRoot, body.relativePath);
-        const entry = await registry.add({ relativePath: validated.relativePath, title: body.title });
+        const entry = await previews.register(body);
         return sendJson(response, 201, { preview: safePreview(entry, true) });
+      }
+
+      const eventsMatch = url.pathname.match(/^\/api\/previews\/([a-z0-9-]+)\/events$/);
+      if (eventsMatch && request.method === 'GET') {
+        const entry = (await registry.list()).find((item) => item.slug === eventsMatch[1] && item.enabled);
+        if (!entry) return sendJson(response, 404, { error: 'Preview not found' });
+        response.writeHead(200, {
+          'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store',
+          'x-accel-buffering': 'no', 'x-content-type-options': 'nosniff',
+        });
+        response.write('retry: 1000\n\n');
+        const unsubscribe = changes.subscribe(entry.slug, (event, value) => {
+          if (response.destroyed || response.writableEnded) return;
+          response.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
+          if (event === 'disabled') response.end();
+        });
+        const heartbeat = setInterval(() => response.write(': heartbeat\n\n'), 15_000);
+        // Periodic reconnect rechecks Access identity and preview permissions.
+        const expiry = setTimeout(() => response.end(), 60_000);
+        heartbeat.unref(); expiry.unref();
+        response.once('close', () => { unsubscribe(); clearInterval(heartbeat); clearTimeout(expiry); });
+        return;
       }
 
       const toggleMatch = url.pathname.match(/^\/api\/previews\/([a-z0-9-]+)$/);
@@ -185,8 +217,10 @@ export function createGatewayServer({ config, registry, authenticate = (request)
         const requestedPath = fileMatch[2] ?? '';
         const filePath = resolvePreviewFile(preview.directory, requestedPath);
         const verifiedPath = await verifyPreviewFile(preview.directory, filePath);
-        if (['.html', '.htm', '.svg'].includes(extname(verifiedPath).toLowerCase())
-          && request.headers['sec-fetch-dest'] !== 'iframe') {
+        const extension = extname(verifiedPath).toLowerCase();
+        const destination = request.headers['sec-fetch-dest'];
+        if ((['.html', '.htm'].includes(extension) && destination !== 'iframe')
+          || (extension === '.svg' && !['iframe', 'image'].includes(destination))) {
           return sendJson(response, 403, { error: 'Active preview documents must be loaded in the sandboxed preview frame' });
         }
         return await streamFile(request, response, verifiedPath);
@@ -201,4 +235,6 @@ export function createGatewayServer({ config, registry, authenticate = (request)
       return sendError(response, error);
     }
   });
+  server.once('close', () => changes.close());
+  return server;
 }
