@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aion Workspace Previews</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="layout">
+      <header class="header">
+        <div>
+          <p class="eyebrow">AION WORKSPACE</p>
+          <h1 id="page-title">預覽工作區</h1>
+        </div>
+        <a class="back-link hidden" id="back-link" href="/">所有預覽</a>
+      </header>
+
+      <section class="panel admin-panel hidden" id="admin-panel" aria-labelledby="admin-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">管理</p>
+            <h2 id="admin-title">加入預覽</h2>
+          </div>
+          <button class="secondary" id="refresh-candidates" type="button">重新掃描</button>
+        </div>
+        <form id="add-preview-form">
+          <label for="candidate-select">包含 index.html 的工作目錄</label>
+          <div class="form-row">
+            <select id="candidate-select" required>
+              <option value="">載入中…</option>
+            </select>
+            <input id="preview-title-input" maxlength="120" placeholder="顯示名稱（選填）" />
+            <button type="submit">加入</button>
+          </div>
+        </form>
+        <p class="status" id="admin-status" role="status"></p>
+      </section>
+
+      <section class="preview-shell hidden" id="preview-shell">
+        <div class="preview-toolbar">
+          <span id="preview-name"></span>
+          <a id="open-preview" target="_blank" rel="noreferrer">在新分頁開啟</a>
+        </div>
+        <iframe id="preview-frame" title="工作區預覽" sandbox="allow-scripts"></iframe>
+      </section>
+
+      <section class="panel" id="preview-list-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">已啟用</p>
+            <h2>可用預覽</h2>
+          </div>
+        </div>
+        <div class="preview-list" id="preview-list" aria-live="polite"></div>
+        <p class="empty-state hidden" id="empty-state">目前沒有已啟用的預覽。</p>
+      </section>
+    </main>
+  </body>
+</html>
