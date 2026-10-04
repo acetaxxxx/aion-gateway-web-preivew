@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
@@ -27,7 +27,7 @@ test('Team MCP registration preserves personal entries and serves only the dedic
   const headers = { authorization: 'Bearer browser', 'sec-fetch-dest': 'iframe' };
   try {
     await client.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { requestInit: { headers: { authorization: `Bearer ${config.mcpToken}` } } }));
-    const create = (path, teamId = 'team-1') => client.callTool({ name: 'preview_create', arguments: { path, teamId, conversationId: 'lead', slug: 'team-web' } });
+    const create = (path, teamId = 'team-1', slug = 'team-web') => client.callTool({ name: 'preview_create', arguments: { path, teamId, conversationId: 'lead', slug } });
     const created = await create('/data/teams/team-1/project');
     assert.notEqual(created.isError, true);
     assert.equal(created.structuredContent.workspacePath, '/data/teams/team-1/project');
@@ -37,11 +37,24 @@ test('Team MCP registration preserves personal entries and serves only the dedic
     assert.equal(await (await fetch(`${origin}/preview/team-web/`, { headers })).text(), '<h1>Team</h1>');
     assert.equal(await (await fetch(`${origin}/preview/${personal.slug}/`, { headers })).text(), '<h1>Personal</h1>');
     assert.equal((await create('/data/teams/team-1/project', 'other-team')).isError, true);
-    await assert.rejects(() => registry.update('team-web', { teamId: 'other-team' }), (error) => error.statusCode === 400);
+    assert.equal((await client.callTool({ name: 'preview_update', arguments: { slug: 'team-web', teamId: 'other-team' } })).isError, true);
     assert.equal((await create('/data/teams/team-1/../project')).isError, true);
     assert.equal((await create('/data/logs')).isError, true);
     await symlink(join(root, 'users'), join(root, 'teams', 'team-1', 'escape'));
     assert.equal((await create('/data/teams/team-1/escape')).isError, true);
+    await mkdir(join(root, 'teams', 'team-2', 'project'), { recursive: true });
+    await writeFile(join(root, 'teams', 'team-2', 'project', 'index.html'), '<h1>Other Team</h1>');
+    await symlink(join(root, 'teams', 'team-2', 'project'), join(root, 'teams', 'team-1', 'alias'));
+    assert.equal((await create('/data/teams/team-1/alias', 'team-1', 'cross-team')).isError, true);
+    // A replacement after registration must be denied by file/status readers,
+    // not only by initial registration validation.
+    await rename(join(root, 'teams', 'team-1', 'project'), join(root, 'teams', 'team-1', 'original'));
+    await symlink(join(root, 'teams', 'team-2', 'project'), join(root, 'teams', 'team-1', 'project'));
+    const replaced = await fetch(`${origin}/preview/team-web/`, { headers });
+    assert.equal(replaced.status, 400);
+    assert.doesNotMatch(await replaced.text(), /Other Team/);
+    const catalog = await (await fetch(`${origin}/api/previews`, { headers })).json();
+    assert.equal(catalog.previews.find((entry) => entry.slug === 'team-web').status, 'missing');
     const reloaded = new PreviewRegistry(registry.filePath);
     assert.equal((await reloaded.list()).find((entry) => entry.slug === 'team-web').workspaceScope, 'team');
   } finally {
