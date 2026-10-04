@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { resolvePreviewDirectory, validateRelativePath, previewScanRoot } from './filesystem.mjs';
+import { resolveRegisteredPreview, validateRelativePath, previewScanRoot } from './filesystem.mjs';
 
 // One registration seam for MCP and the browser. Agent absolute paths are
 // translated to the Gateway mount; they never become arbitrary filesystem reads.
@@ -31,7 +31,7 @@ export class Previews {
         ? relative(resolve(this.config.teamAgentWorkspaceRoot), resolve(path)) : null;
       workspaceScope = rel !== null && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? 'team' : 'user';
     }
-    const scanRoot = previewScanRoot(this.config, { workspaceScope });
+    previewScanRoot(this.config, { workspaceScope });
     const requested = relativePath ?? this.relativePath(path, workspaceScope);
     const clean = validateRelativePath(requested);
     if (workspaceScope === 'team') {
@@ -39,7 +39,7 @@ export class Previews {
       if (teamId && teamId !== pathTeamId) throw Object.assign(new Error('Team workspace does not match the bound Team'), { statusCode: 400 });
       teamId = pathTeamId;
     }
-    const validated = await resolvePreviewDirectory(scanRoot, clean, { requireEntry: !reuse });
+    const validated = await resolveRegisteredPreview(this.config, { relativePath: clean, workspaceScope, teamId }, { requireEntry: !reuse });
     if (reuse) return this.registry.ensure({ relativePath: validated.relativePath, title, slug, teamId, conversationId, workspaceScope });
     return this.registry.add({ relativePath: validated.relativePath, title, workspaceScope, teamId });
   }

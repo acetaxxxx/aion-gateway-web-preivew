@@ -52,8 +52,21 @@ export function previewScanRoot(config, entry) {
   throw Object.assign(new Error('Preview workspace scope is not configured'), { statusCode: 400 });
 }
 
-export function resolveRegisteredPreview(config, entry, options) {
-  return resolvePreviewDirectory(previewScanRoot(config, entry), entry.relativePath, options);
+export async function resolveRegisteredPreview(config, entry, options) {
+  const scanRoot = previewScanRoot(config, entry);
+  const preview = await resolvePreviewDirectory(scanRoot, entry.relativePath, options);
+  if (entry.workspaceScope === 'team') {
+    const pathTeamId = validateRelativePath(entry.relativePath).split('/')[0];
+    if (entry.teamId !== pathTeamId) {
+      throw Object.assign(new Error('Team workspace does not match the bound Team'), { statusCode: 400 });
+    }
+    const teamRoot = resolve(preview.root, pathTeamId);
+    // Canonicalizing the Team root itself must not silently turn Team A into B.
+    if (await realpath(teamRoot) !== teamRoot || !isWithin(teamRoot, preview.directory)) {
+      throw Object.assign(new Error('Preview directory resolves outside its bound Team'), { statusCode: 400 });
+    }
+  }
+  return preview;
 }
 
 export async function discoverCandidates(scanRoot) {
