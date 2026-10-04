@@ -30,6 +30,7 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
   await writeFile(join(project, 'index.html'), '<h1>Preview</h1>');
   const items = [{ id: 'm1', type: 'text', content: { content: 'Welcome' }, position: 'left', created_at: 1 }];
   let expired = true;
+  let collaboratorActive = true;
   const backend = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://backend');
     const json = (status, value) => response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(value));
@@ -40,23 +41,27 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
       if (password !== 'server-only-password') return json(401, { success: false });
       return json(200, { success: true, token: username });
     }
-    if (request.headers.authorization !== 'Bearer owner@example.com') return json(403, { success: false });
+    const caller = request.headers.authorization?.replace('Bearer ', '');
+    if (caller !== 'owner@example.com' && !(caller === 'collaborator@example.com' && collaboratorActive)) return json(403, { success: false });
     if (expired) { expired = false; return json(401, { success: false }); }
     if (url.pathname === '/api/teams/team') return json(200, { success: true, data: {
       leader_assistant_id: 'lead-slot', assistants: [{ slot_id: 'lead-slot', role: 'lead', conversation_id: 'leader' }],
     } });
-    if (url.pathname === '/api/conversations/leader') return json(200, { success: true, data: {
+    // Real Core keeps direct conversation routes Owner-only, and rejects all
+    // Team-owned sends there. Only Team routes authorize collaborators.
+    if (url.pathname.startsWith('/api/conversations/')) return json(403, { success: false });
+    if (url.pathname === '/api/teams/team/conversations/leader') return json(200, { success: true, data: {
       id: 'leader', name: 'Leader', runtime: { can_send_message: true },
     } });
-    if (url.pathname === '/api/conversations/leader/messages') {
-      if (request.method === 'POST') {
+    if (url.pathname === '/api/teams/team/messages' && request.method === 'POST') {
         let raw = '';
         for await (const chunk of request) raw += chunk;
         const content = JSON.parse(raw).content;
-        items.push({ id: 'm2', type: 'text', content: { content }, position: 'right', created_at: 2 });
+        items.push({ id: 'm2', type: 'text', content: { content }, position: 'right', created_at: 2, actor_user_id: caller });
         items.push({ id: 'm3', type: 'text', content: { content: 'Updated website' }, position: 'left', created_at: 3 });
         return json(200, { success: true, data: { accepted: true } });
-      }
+    }
+    if (url.pathname === '/api/teams/team/conversations/leader/messages' && request.method === 'GET') {
       return json(200, { success: true, data: { items, oldest_cursor: 'm1', has_more_before: false } });
     }
     return json(404, { success: false });
@@ -65,7 +70,7 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
   const config = {
     previewScanRoot: join(root, 'workspaces'), adminEmails: new Set(['owner@example.com']),
     aionBackendUrl: `http://127.0.0.1:${backend.address().port}`,
-    aionUsers: new Map(['owner@example.com', 'viewer@example.com'].map((username) => [username, { username, password: 'server-only-password' }])),
+    aionUsers: new Map(['owner@example.com', 'collaborator@example.com', 'viewer@example.com'].map((username) => [username, { username, password: 'server-only-password' }])),
   };
   const registry = new PreviewRegistry(join(root, 'registry.json'));
   const entry = await registry.ensure({ relativePath: 'owner/project', slug: 'demo', teamId: 'team', conversationId: 'worker' });
@@ -112,6 +117,13 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
     assert.equal((await send(config.publicUrl, '')).status, 400);
     assert.equal((await send(config.publicUrl)).status, 202);
     assert.deepEqual((await next()).messages.map((item) => item.text), ['Welcome', 'Make it blue', 'Updated website']);
+    const memberHeaders = { authorization: 'Bearer collaborator@example.com' };
+    assert.equal((await fetch(`${path}/messages`, { headers: memberHeaders })).status, 200);
+    assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Member edit' }) })).status, 202);
+    assert.equal(items.find((item) => item.content.content === 'Member edit').actor_user_id, 'collaborator@example.com');
+    collaboratorActive = false;
+    assert.equal((await fetch(`${path}/messages`, { headers: memberHeaders })).status, 403);
+    assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Denied edit' }) })).status, 403);
     await registry.setEnabled(entry.slug, false);
     assert.deepEqual(await next(), {});
     assert.equal((await fetch(`${path}/messages`, { headers })).status, 404);
