@@ -83,6 +83,7 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
   const path = `${config.publicUrl}/api/previews/${entry.slug}/chat`;
   const headers = { authorization: 'Bearer owner@example.com' };
   const controller = new AbortController();
+  const memberController = new AbortController();
   try {
     assert.equal((await fetch(`${path}/messages`)).status, 401);
     assert.equal((await fetch(`${path}/messages`, { headers: { authorization: 'Bearer viewer@example.com' } })).status, 403);
@@ -95,13 +96,13 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
     const stream = await fetch(`${path}/events`, { headers, signal: controller.signal });
     const reader = stream.body.getReader();
     let buffer = '';
-    async function next() {
+    async function next(expected = 'messages') {
       while (true) {
         const boundary = buffer.indexOf('\n\n');
         if (boundary >= 0) {
           const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
           const data = frame.split('\ndata: ')[1];
-          if (data) return JSON.parse(data);
+          if (data && frame.includes(`event: ${expected}\n`)) return JSON.parse(data);
           continue;
         }
         const result = await reader.read();
@@ -122,14 +123,27 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
     assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Member edit' }) })).status, 202);
     const memberSnapshot = await (await fetch(`${path}/messages`, { headers: memberHeaders })).json();
     assert.equal(memberSnapshot.messages.find((item) => item.text === 'Member edit').actorUserId, 'collaborator@example.com');
+    const memberStream = await fetch(`${path}/events`, { headers: memberHeaders, signal: memberController.signal });
+    assert.equal(memberStream.status, 200);
+    const memberReader = memberStream.body.getReader();
+    let memberBuffer = '';
+    async function memberEvent(name) {
+      while (!memberBuffer.includes(`event: ${name}\ndata: `)) {
+        const value = await memberReader.read();
+        assert.equal(value.done, false, `Stream closed before ${name}`);
+        memberBuffer += Buffer.from(value.value).toString();
+      }
+    }
+    await memberEvent('messages');
     collaboratorActive = false;
     assert.equal((await fetch(`${path}/messages`, { headers: memberHeaders })).status, 403);
     assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Denied edit' }) })).status, 403);
+    await memberEvent('unavailable');
     await registry.setEnabled(entry.slug, false);
-    assert.deepEqual(await next(), {});
+    assert.deepEqual(await next('disabled'), {});
     assert.equal((await fetch(`${path}/messages`, { headers })).status, 404);
   } finally {
-    controller.abort(); server.closeAllConnections(); backend.closeAllConnections();
+    controller.abort(); memberController.abort(); server.closeAllConnections(); backend.closeAllConnections();
     await Promise.all([new Promise((resolve) => server.close(resolve)), new Promise((resolve) => backend.close(resolve))]);
     await rm(root, { recursive: true, force: true });
   }

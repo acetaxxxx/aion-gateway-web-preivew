@@ -9,15 +9,18 @@ import { PreviewRegistry } from '../src/registry.mjs';
 import { PreviewChanges } from '../src/changes.mjs';
 import { createGatewayServer } from '../src/server.mjs';
 
-test('Agent creates a website and returns a link that updates HTML, CSS, and JS without another MCP call', async ({ page }) => {
+for (const scope of ['user', 'team']) {
+test(`${scope} Agent creates a website and returns a link that updates HTML, CSS, and JS without another MCP call`, async ({ page }) => {
   const root = await mkdtemp(join(tmpdir(), 'gateway-browser-'));
-  const project = join(root, 'workspaces', 'user', 'project');
+  const project = scope === 'team' ? join(root, 'teams', 'team-1', 'project') : join(root, 'workspaces', 'user', 'project');
+  await mkdir(join(root, 'workspaces'), { recursive: true });
   await mkdir(project, { recursive: true });
   const html = (title) => `<!doctype html><link rel="stylesheet" href="style.css"><h1>${title}</h1><p id="script-output"></p><script src="app.js"></script>`;
   await writeFile(join(project, 'style.css'), 'h1 { color: rgb(0, 128, 0) }');
   await writeFile(join(project, 'app.js'), 'document.querySelector("#script-output").textContent = "Script one";');
   const config = {
     previewScanRoot: join(root, 'workspaces'), agentWorkspaceRoot: '/data/conversations/users',
+    teamPreviewScanRoot: join(root, 'teams'), teamAgentWorkspaceRoot: '/data/teams',
     publicUrl: 'https://preview.example.com', mcpToken: 'browser-test-token-'.repeat(3), adminEmails: new Set(),
     aionUsers: new Map([['viewer@example.com', { username: 'viewer@example.com', password: 'fixture-only' }]]),
   };
@@ -26,16 +29,20 @@ test('Agent creates a website and returns a link that updates HTML, CSS, and JS 
     const json = (value) => response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(value));
     if (request.url === '/login') return json({ success: true, token: 'browser-fixture' });
     if (request.headers.authorization !== 'Bearer browser-fixture') return response.writeHead(403).end();
-    if (request.url === '/api/conversations/conv') return json({ success: true, data: { name: 'Web design', runtime: { can_send_message: true } } });
-    if (request.method === 'POST') {
+    const conversationPath = scope === 'team' ? '/api/teams/team-1/conversations/conv' : '/api/conversations/conv';
+    const sendPath = scope === 'team' ? '/api/teams/team-1/messages' : '/api/conversations/conv/messages';
+    if (scope === 'team' && request.url === '/api/teams/team-1') return json({ success: true, data: { leader_assistant_id: 'lead', assistants: [{ slot_id: 'lead', conversation_id: 'conv' }] } });
+    if (request.url === conversationPath) return json({ success: true, data: { name: 'Web design', runtime: { can_send_message: true } } });
+    if (request.url === sendPath && request.method === 'POST') {
       let body = '';
       for await (const chunk of request) body += chunk;
-      items.push({ id: 'm2', type: 'text', content: { content: JSON.parse(body).content }, position: 'right', created_at: 2 });
+      items.push({ id: 'm2', type: 'text', content: { content: JSON.parse(body).content, ...(scope === 'team' ? { actor_user_id: 'collaborator' } : {}) }, position: 'right', created_at: 2 });
       items.push({ id: 'm3', type: 'text', content: { content: 'Website updated' }, position: 'left', created_at: 3 });
       await writeFile(join(project, 'index.html'), html('Changed from preview chat'));
       return json({ success: true, data: { accepted: true } });
     }
-    return json({ success: true, data: { items, has_more_before: false, oldest_cursor: 'm1' } });
+    if (request.url.startsWith(`${conversationPath}/messages?`) && request.method === 'GET') return json({ success: true, data: { items, has_more_before: false, oldest_cursor: 'm1' } });
+    return response.writeHead(403).end();
   });
   await new Promise((resolve) => backend.listen(0, '127.0.0.1', resolve));
   config.aionBackendUrl = `http://127.0.0.1:${backend.address().port}`;
@@ -52,7 +59,7 @@ test('Agent creates a website and returns a link that updates HTML, CSS, and JS 
     await client.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
       requestInit: { headers: { authorization: `Bearer ${config.mcpToken}` } },
     }));
-    const created = await client.callTool({ name: 'preview_create', arguments: { path: '/data/conversations/users/user/project', slug: 'my-web', conversationId: 'conv' } });
+    const created = await client.callTool({ name: 'preview_create', arguments: { path: scope === 'team' ? '/data/teams/team-1/project' : '/data/conversations/users/user/project', slug: 'my-web', conversationId: 'conv', ...(scope === 'team' ? { teamId: 'team-1' } : {}) } });
     expect(created.isError).not.toBe(true);
     await page.setExtraHTTPHeaders({ authorization: 'Bearer browser' });
     await page.goto(`${origin}${new URL(created.structuredContent.url).pathname}`);
@@ -69,6 +76,7 @@ test('Agent creates a website and returns a link that updates HTML, CSS, and JS 
     await page.locator('#chat-input').fill('Change the heading');
     await page.locator('#chat-send').click();
     await expect(page.locator('#chat-messages')).toContainText('Website updated');
+    if (scope === 'team') await expect(page.locator('#chat-messages')).toContainText('collaborator');
     await expect(preview.locator('h1')).toHaveText('Changed from preview chat');
 
     await writeFile(join(project, 'index.html'), html('Updated by Agent'));
@@ -93,3 +101,4 @@ test('Agent creates a website and returns a link that updates HTML, CSS, and JS 
     await rm(root, { recursive: true, force: true });
   }
 });
+}
