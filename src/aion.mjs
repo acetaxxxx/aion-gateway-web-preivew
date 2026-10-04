@@ -2,6 +2,11 @@ function failure(statusCode, message) {
   return Object.assign(new Error(message), { statusCode });
 }
 
+async function safeJson(response) {
+  try { return await response.json(); }
+  catch { throw failure(502, 'Aion response is unavailable'); }
+}
+
 // All calls retain the verified browser user's Aion identity. Aion authorizes
 // conversation ownership; catalog visibility never grants chat access.
 export class AionBackend {
@@ -27,7 +32,7 @@ export class AionBackend {
           headers: { 'content-type': 'application/json' }, body: JSON.stringify(credentials),
         });
         if (!response.ok) throw failure(502, 'Aion authentication failed');
-        const body = await response.json();
+        const body = await safeJson(response);
         if (!body.success || typeof body.token !== 'string') throw failure(502, 'Aion authentication failed');
         this.#sessions.set(email, { token: body.token, expiresAt: Date.now() + 5 * 60_000 });
         return body.token;
@@ -48,7 +53,7 @@ export class AionBackend {
       return this.#request(email, path, { method, body }, false);
     }
     if (!response.ok) throw failure([401, 403, 404, 409, 429].includes(response.status) ? response.status : 502, 'Aion conversation request was rejected');
-    const value = await response.json();
+    const value = await safeJson(response);
     if (value.success !== true) throw failure(502, 'Aion conversation response is unavailable');
     return value.data;
   }

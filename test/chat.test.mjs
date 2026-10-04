@@ -6,6 +6,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGatewayServer } from '../src/server.mjs';
 import { PreviewRegistry } from '../src/registry.mjs';
+import { AionBackend } from '../src/aion.mjs';
+
+test('malformed upstream replies cannot leak authentication data through error messages', async () => {
+  const backend = new AionBackend({
+    aionBackendUrl: 'http://backend',
+    aionUsers: new Map([['owner@example.com', { username: 'owner', password: 'password' }]]),
+  }, async (url) => url.pathname === '/login'
+    ? Response.json({ success: true, token: 'token' })
+    : new Response('secret-upstream-response', { status: 200 }));
+  await assert.rejects(() => backend.send('owner@example.com', { conversationId: 'conv' }, 'Hi'), (error) => {
+    assert.equal(error.statusCode, 502);
+    assert.doesNotMatch(error.message, /secret-upstream-response|token|password/);
+    return true;
+  });
+});
 
 // Wire shapes mirror aionui-api-types auth, conversation, and team responses.
 test('bound chat retains Aion ownership, resolves Team Leader, and delivers updates without exposing credentials', { timeout: 15_000 }, async () => {
