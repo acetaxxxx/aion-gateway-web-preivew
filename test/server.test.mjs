@@ -109,3 +109,19 @@ test('registered state is persisted without granting viewers registry filesystem
   assert.doesNotMatch(await response.text(), /owner\/project/);
   assert.match(await readFile(join(root, 'gateway', 'previews.json'), 'utf8'), /owner\/project/);
 });
+
+test('catalog management preserves URLs on rename and files on removal', async () => {
+  const entry = (await registry.list())[0];
+  const path = `${origin}/api/previews/${entry.slug}`;
+  const rename = { method: 'PATCH', headers: { ...headers('owner'), 'content-type': 'application/json' }, body: JSON.stringify({ title: 'New display title' }) };
+  assert.equal((await fetch(path, { ...rename, headers: { ...rename.headers, 'sec-fetch-site': 'cross-site' } })).status, 403);
+  assert.equal((await fetch(path, { ...rename, headers: headers('viewer') })).status, 403);
+  const renamed = await fetch(path, rename);
+  const value = (await renamed.json()).preview;
+  assert.equal(value.slug, entry.slug);
+  assert.equal(value.title, 'New display title');
+  assert.equal((await fetch(path, { method: 'DELETE', headers: headers('viewer') })).status, 403);
+  assert.equal((await fetch(path, { method: 'DELETE', headers: headers('owner') })).status, 200);
+  assert.equal((await fetch(`${origin}/p/${entry.slug}`, { headers: headers('owner') })).status, 404);
+  assert.match(await readFile(join(config.previewScanRoot, 'owner', 'project', 'index.html'), 'utf8'), /parent.postMessage/);
+});
