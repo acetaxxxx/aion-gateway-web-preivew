@@ -1,3 +1,7 @@
+import { locale, t, translatePage } from './i18n.js';
+
+translatePage();
+
 const list = document.querySelector('#preview-list');
 const emptyState = document.querySelector('#empty-state');
 const adminPanel = document.querySelector('#admin-panel');
@@ -14,7 +18,7 @@ async function request(path, options) {
     headers: { ...(options?.headers ?? {}), ...(options?.body ? { 'content-type': 'application/json' } : {}) },
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+  if (!response.ok) throw new Error(body.error ?? t('request.failed', { status: response.status }));
   return body;
 }
 
@@ -27,28 +31,33 @@ function element(tag, className, text) {
 
 async function loadCandidates() {
   const { candidates } = await request('/api/candidates');
-  select.replaceChildren(new Option('選擇工作目錄…', ''));
+  select.replaceChildren(new Option(t('admin.chooseDirectory'), ''));
   for (const candidate of candidates) {
-    const option = new Option(`${candidate.title} — ${candidate.workspaceScope === 'team' ? 'Team · ' : ''}${candidate.relativePath}`, candidate.relativePath);
+    const option = new Option(t(candidate.workspaceScope === 'team' ? 'admin.teamCandidate' : 'admin.candidate', {
+      title: candidate.title, path: candidate.relativePath,
+    }), candidate.relativePath);
     option.dataset.workspaceScope = candidate.workspaceScope ?? 'user';
     select.add(option);
   }
-  if (candidates.length === 0) select.add(new Option('找不到含 index.html 的目錄', ''));
+  if (candidates.length === 0) select.add(new Option(t('admin.noDirectories'), ''));
 }
 
 function renderPreview(entry, admin) {
   const card = element('article', 'preview-card');
   const details = element('div');
   details.append(element('h3', '', entry.title));
-  const state = { ready: '可用', waiting: '等待網頁', missing: '目錄不存在', disabled: '已停用' };
-  details.append(element('p', '', `${state[entry.status] ?? entry.status}${entry.teamId ? ` · Team ${entry.teamId}` : ''} · ${new Date(entry.updatedAt).toLocaleString('zh-TW')}`));
+  const state = { ready: 'preview.ready', waiting: 'preview.waiting', missing: 'preview.missing', disabled: 'preview.disabled' };
+  details.append(element('p', '', t(entry.teamId ? 'preview.teamMetadata' : 'preview.metadata', {
+    status: state[entry.status] ? t(state[entry.status]) : entry.status,
+    teamId: entry.teamId, date: new Date(entry.updatedAt).toLocaleString(locale),
+  })));
   if (admin) details.append(element('p', '', entry.relativePath));
   const actions = element('div', 'preview-actions');
-  const open = element('a', '', '開啟');
+  const open = element('a', '', t('preview.open'));
   open.href = `/p/${encodeURIComponent(entry.slug)}`;
   actions.append(open);
   if (admin) {
-    const toggle = element('button', 'secondary', entry.enabled ? '停用' : '啟用');
+    const toggle = element('button', 'secondary', t(entry.enabled ? 'preview.disable' : 'preview.enable'));
     toggle.type = 'button';
     toggle.addEventListener('click', async () => {
       try {
@@ -59,20 +68,20 @@ function renderPreview(entry, admin) {
       } catch (error) { adminStatus.textContent = error.message; }
     });
     actions.append(toggle);
-    const rename = element('button', 'secondary', '改名');
+    const rename = element('button', 'secondary', t('preview.rename'));
     rename.type = 'button';
     rename.addEventListener('click', async () => {
-      const title = window.prompt('新的顯示名稱（網址不變）', entry.title);
+      const title = window.prompt(t('preview.renamePrompt'), entry.title);
       if (!title?.trim()) return;
       try {
         await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'PATCH', body: JSON.stringify({ title }) });
         await loadPreviews(admin);
       } catch (error) { adminStatus.textContent = error.message; }
     });
-    const remove = element('button', 'secondary', '移除');
+    const remove = element('button', 'secondary', t('preview.remove'));
     remove.type = 'button';
     remove.addEventListener('click', async () => {
-      if (!window.confirm('移除此預覽？工作目錄與檔案不會刪除。')) return;
+      if (!window.confirm(t('preview.removeConfirm'))) return;
       try {
         await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'DELETE' });
         await loadPreviews(admin);
@@ -110,11 +119,11 @@ async function showChat(slug) {
     for (const message of snapshot.messages) history.set(message.id, message);
     messages.replaceChildren(...[...history.values()].sort((a, b) => a.createdAt - b.createdAt).map((message) => {
       const node = element('article', `chat-message ${message.role}`);
-      node.append(element('strong', '', message.role === 'user' ? message.actorUserId ?? '你' : 'Aion'), element('div', '', message.text));
-      if (message.createdAt) node.append(element('small', '', new Date(message.createdAt).toLocaleString('zh-TW')));
+      node.append(element('strong', '', message.role === 'user' ? message.actorUserId ?? t('chat.you') : t('chat.assistant')), element('div', '', message.text));
+      if (message.createdAt) node.append(element('small', '', new Date(message.createdAt).toLocaleString(locale)));
       return node;
     }));
-    status.textContent = `對話：${snapshot.name}（由 Aion 驗證個人或 Team 權限）`;
+    status.textContent = t('chat.conversation', { name: snapshot.name });
     send.disabled = snapshot.runtime?.can_send_message === false;
   }
   try {
@@ -138,9 +147,9 @@ async function showChat(slug) {
   const events = new EventSource(`${path}/events`);
   events.addEventListener('messages', (event) => render(JSON.parse(event.data)));
   for (const name of ['disabled', 'unavailable']) events.addEventListener(name, () => {
-    events.close(); send.disabled = true; status.textContent = '對話已無法存取，請重新整理確認登入與預覽狀態。';
+    events.close(); send.disabled = true; status.textContent = t('chat.unavailable');
   });
-  events.onerror = () => { status.textContent = '正在重新連接 Aion 對話…'; };
+  events.onerror = () => { status.textContent = t('chat.reconnecting'); };
   window.addEventListener('pagehide', () => events.close(), { once: true });
   document.querySelector('#chat-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -149,7 +158,7 @@ async function showChat(slug) {
     try {
       await request(`${path}/messages`, { method: 'POST', body: JSON.stringify({ content: input.value }) });
       input.value = '';
-      status.textContent = '已交給 Aion；回覆與網頁修改將自動更新。';
+      status.textContent = t('chat.sent');
     } catch (error) { status.textContent = error.message; send.disabled = false; }
   });
 }
@@ -157,7 +166,7 @@ async function showChat(slug) {
 async function showPreview() {
   const { previews } = await request('/api/previews');
   const entry = previews.find((item) => item.slug === previewSlug);
-  if (!entry) throw new Error('找不到這個預覽，或預覽已停用。');
+  if (!entry) throw new Error(t('preview.notFound'));
   document.querySelector('#page-title').textContent = entry.title;
   document.querySelector('#back-link').classList.remove('hidden');
   document.querySelector('#preview-list-panel').classList.add('hidden');
@@ -172,20 +181,20 @@ async function showPreview() {
     if (!state.available) {
       frame.removeAttribute('src');
       frame.classList.add('hidden');
-      status.textContent = '等待 Agent 完成網頁…';
+      status.textContent = t('preview.waitingForAgent');
       return;
     }
     frame.classList.remove('hidden');
     frame.src = `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
-    status.textContent = '即時預覽已連線，檔案修改後會自動更新。';
+    status.textContent = t('preview.connected');
   }
   events.addEventListener('ready', update);
   events.addEventListener('reload', update);
   events.addEventListener('disabled', () => {
     events.close(); frame.removeAttribute('src'); frame.classList.add('hidden');
-    status.textContent = '此預覽已停用。';
+    status.textContent = t('preview.disabledNotice');
   });
-  events.onerror = () => { status.textContent = '正在重新連接即時預覽…'; };
+  events.onerror = () => { status.textContent = t('preview.reconnecting'); };
   window.addEventListener('pagehide', () => events.close(), { once: true });
   document.querySelector('#open-preview').href = `/p/${encodeURIComponent(entry.slug)}`;
   await showChat(entry.slug);
@@ -201,7 +210,7 @@ async function start() {
     }
     await loadPreviews(me.admin);
   } catch (error) {
-    document.querySelector('#page-title').textContent = '無法載入 Gateway';
+    document.querySelector('#page-title').textContent = t('page.loadFailed');
     emptyState.classList.remove('hidden');
     emptyState.textContent = error.message;
   }
@@ -209,7 +218,7 @@ async function start() {
 
 addForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  adminStatus.textContent = '正在加入…';
+  adminStatus.textContent = t('admin.adding');
   try {
     await request('/api/previews', {
       method: 'POST',
@@ -220,13 +229,13 @@ addForm.addEventListener('submit', async (event) => {
       }),
     });
     document.querySelector('#preview-title-input').value = '';
-    adminStatus.textContent = '已加入預覽。';
+    adminStatus.textContent = t('admin.added');
     await loadPreviews(true);
   } catch (error) { adminStatus.textContent = error.message; }
 });
 
 document.querySelector('#refresh-candidates').addEventListener('click', async () => {
-  try { await loadCandidates(); adminStatus.textContent = '目錄清單已更新。'; }
+  try { await loadCandidates(); adminStatus.textContent = t('admin.directoriesUpdated'); }
   catch (error) { adminStatus.textContent = error.message; }
 });
 

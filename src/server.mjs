@@ -152,7 +152,7 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
         return response.end(await adminPage());
       }
 
-      if (['/app.js', '/app.css'].includes(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
+      if (['/app.js', '/i18n.js', '/app.css'].includes(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
         return await streamFile(request, response, resolve(PUBLIC_DIR, url.pathname.slice(1)));
       }
 

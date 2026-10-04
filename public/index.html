@@ -3,36 +3,36 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Aion Workspace Previews</title>
+    <title data-i18n="page.title">Aion Workspace Previews</title>
     <link rel="stylesheet" href="/app.css" />
-    <script src="/app.js" defer></script>
+    <script src="/app.js" type="module"></script>
   </head>
   <body>
     <main class="layout">
       <header class="header">
         <div>
-          <p class="eyebrow">AION WORKSPACE</p>
-          <h1 id="page-title">預覽工作區</h1>
+          <p class="eyebrow" data-i18n="page.brand">AION WORKSPACE</p>
+          <h1 id="page-title" data-i18n="page.heading">預覽工作區</h1>
         </div>
-        <a class="back-link hidden" id="back-link" href="/">所有預覽</a>
+        <a class="back-link hidden" id="back-link" href="/" data-i18n="page.back">所有預覽</a>
       </header>
 
       <section class="panel admin-panel hidden" id="admin-panel" aria-labelledby="admin-title">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">管理</p>
-            <h2 id="admin-title">加入預覽</h2>
+            <p class="eyebrow" data-i18n="admin.heading">管理</p>
+            <h2 id="admin-title" data-i18n="admin.addPreview">加入預覽</h2>
           </div>
-          <button class="secondary" id="refresh-candidates" type="button">重新掃描</button>
+          <button class="secondary" id="refresh-candidates" type="button" data-i18n="admin.rescan">重新掃描</button>
         </div>
         <form id="add-preview-form">
-          <label for="candidate-select">包含 index.html 的工作目錄</label>
+          <label for="candidate-select" data-i18n="admin.directoryLabel">包含 index.html 的工作目錄</label>
           <div class="form-row">
             <select id="candidate-select" required>
-              <option value="">載入中…</option>
+              <option value="" data-i18n="admin.loading">載入中…</option>
             </select>
-            <input id="preview-title-input" maxlength="120" placeholder="顯示名稱（選填）" />
-            <button type="submit">加入</button>
+            <input id="preview-title-input" maxlength="120" placeholder="顯示名稱（選填）" data-i18n-placeholder="admin.titlePlaceholder" />
+            <button type="submit" data-i18n="admin.add">加入</button>
           </div>
         </form>
         <p class="status" id="admin-status" role="status"></p>
@@ -41,19 +41,19 @@
       <section class="preview-shell hidden" id="preview-shell">
         <div class="preview-toolbar">
           <span id="preview-name"></span>
-          <a id="open-preview" target="_blank" rel="noreferrer">在新分頁開啟</a>
+          <a id="open-preview" target="_blank" rel="noreferrer" data-i18n="preview.openNewTab">在新分頁開啟</a>
         </div>
-        <p class="status" id="preview-status" role="status">正在連接即時預覽…</p>
-        <iframe id="preview-frame" title="工作區預覽" sandbox="allow-scripts"></iframe>
+        <p class="status" id="preview-status" role="status" data-i18n="preview.connecting">正在連接即時預覽…</p>
+        <iframe id="preview-frame" title="工作區預覽" data-i18n-title="preview.frameTitle" sandbox="allow-scripts"></iframe>
         <section class="chat-panel" aria-labelledby="chat-heading">
-          <h2 id="chat-heading">與 Aion 繼續協作</h2>
-          <p class="status" id="chat-status" role="status">正在載入綁定對話…</p>
-          <button class="secondary hidden" id="chat-older" type="button">載入較早訊息</button>
+          <h2 id="chat-heading" data-i18n="chat.heading">與 Aion 繼續協作</h2>
+          <p class="status" id="chat-status" role="status" data-i18n="chat.loading">正在載入綁定對話…</p>
+          <button class="secondary hidden" id="chat-older" type="button" data-i18n="chat.older">載入較早訊息</button>
           <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
           <form id="chat-form">
-            <label for="chat-input">訊息</label>
-            <textarea id="chat-input" maxlength="8000" required placeholder="請 Aion 修改這個網頁…"></textarea>
-            <button id="chat-send" type="submit">傳送</button>
+            <label for="chat-input" data-i18n="chat.messageLabel">訊息</label>
+            <textarea id="chat-input" maxlength="8000" required placeholder="請 Aion 修改這個網頁…" data-i18n-placeholder="chat.messagePlaceholder"></textarea>
+            <button id="chat-send" type="submit" data-i18n="chat.send">傳送</button>
           </form>
         </section>
       </section>
@@ -61,14 +61,14 @@
       <section class="panel" id="preview-list-panel">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">已啟用</p>
-            <h2>可用預覽</h2>
+            <p class="eyebrow" data-i18n="catalog.enabled">已啟用</p>
+            <h2 data-i18n="catalog.heading">可用預覽</h2>
           </div>
         </div>
-        <label for="preview-search">搜尋預覽</label>
-        <input id="preview-search" type="search" placeholder="名稱或 Team" />
+        <label for="preview-search" data-i18n="catalog.searchLabel">搜尋預覽</label>
+        <input id="preview-search" type="search" placeholder="名稱或 Team" data-i18n-placeholder="catalog.searchPlaceholder" />
         <div class="preview-list" id="preview-list" aria-live="polite"></div>
-        <p class="empty-state hidden" id="empty-state">目前沒有已啟用的預覽。</p>
+        <p class="empty-state hidden" id="empty-state" data-i18n="catalog.empty">目前沒有已啟用的預覽。</p>
       </section>
     </main>
   </body>
