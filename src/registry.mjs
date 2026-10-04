@@ -59,6 +59,9 @@ export class PreviewRegistry {
     return this.#mutate(async (entries) => {
       const entry = entries.find((item) => item.slug === slug);
       if (!entry) return null;
+      if (entry.workspaceScope === 'team' && changes.teamId !== undefined && changes.teamId !== entry.teamId) {
+        throw Object.assign(new Error('A Team workspace cannot be rebound to another Team'), { statusCode: 400 });
+      }
       for (const key of ['title', 'enabled', 'teamId', 'conversationId']) {
         if (changes[key] !== undefined) entry[key] = key === 'title' ? changes[key].trim() : changes[key];
       }

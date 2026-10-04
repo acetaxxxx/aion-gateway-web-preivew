@@ -37,6 +37,8 @@ test('Team MCP registration preserves personal entries and serves only the dedic
     assert.equal(await (await fetch(`${origin}/preview/team-web/`, { headers })).text(), '<h1>Team</h1>');
     assert.equal(await (await fetch(`${origin}/preview/${personal.slug}/`, { headers })).text(), '<h1>Personal</h1>');
     assert.equal((await create('/data/teams/team-1/project', 'other-team')).isError, true);
+    await assert.rejects(() => registry.update('team-web', { teamId: 'other-team' }), (error) => error.statusCode === 400);
+    assert.equal((await create('/data/teams/team-1/../project')).isError, true);
     assert.equal((await create('/data/logs')).isError, true);
     await symlink(join(root, 'users'), join(root, 'teams', 'team-1', 'escape'));
     assert.equal((await create('/data/teams/team-1/escape')).isError, true);
