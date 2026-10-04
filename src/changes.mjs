@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
-import { resolvePreviewDirectory } from './filesystem.mjs';
+import { resolveRegisteredPreview } from './filesystem.mjs';
 
 async function revision(directory) {
   const hash = createHash('sha256');
@@ -76,7 +76,7 @@ export class PreviewChanges {
       }
       let next;
       try {
-        const preview = await resolvePreviewDirectory(this.config.previewScanRoot, entry.relativePath);
+        const preview = await resolveRegisteredPreview(this.config, entry);
         next = { revision: await revision(preview.directory), available: true };
       } catch {
         next = { revision: 'unavailable', available: false };

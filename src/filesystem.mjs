@@ -44,6 +44,18 @@ export async function resolvePreviewDirectory(scanRoot, relativePath, { requireE
   return { root, directory: target, relativePath: cleanRelativePath };
 }
 
+// Old registry entries have no scope and retain their original personal root.
+// A separate Team root prevents widening reads to logs, databases or credentials.
+export function previewScanRoot(config, entry) {
+  if (entry.workspaceScope === undefined || entry.workspaceScope === 'user') return config.previewScanRoot;
+  if (entry.workspaceScope === 'team' && config.teamPreviewScanRoot) return config.teamPreviewScanRoot;
+  throw Object.assign(new Error('Preview workspace scope is not configured'), { statusCode: 400 });
+}
+
+export function resolveRegisteredPreview(config, entry, options) {
+  return resolvePreviewDirectory(previewScanRoot(config, entry), entry.relativePath, options);
+}
+
 export async function discoverCandidates(scanRoot) {
   const root = await realpath(scanRoot);
   const results = [];

@@ -29,7 +29,9 @@ async function loadCandidates() {
   const { candidates } = await request('/api/candidates');
   select.replaceChildren(new Option('選擇工作目錄…', ''));
   for (const candidate of candidates) {
-    select.add(new Option(`${candidate.title} — ${candidate.relativePath}`, candidate.relativePath));
+    const option = new Option(`${candidate.title} — ${candidate.workspaceScope === 'team' ? 'Team · ' : ''}${candidate.relativePath}`, candidate.relativePath);
+    option.dataset.workspaceScope = candidate.workspaceScope ?? 'user';
+    select.add(option);
   }
   if (candidates.length === 0) select.add(new Option('找不到含 index.html 的目錄', ''));
 }
@@ -108,10 +110,11 @@ async function showChat(slug) {
     for (const message of snapshot.messages) history.set(message.id, message);
     messages.replaceChildren(...[...history.values()].sort((a, b) => a.createdAt - b.createdAt).map((message) => {
       const node = element('article', `chat-message ${message.role}`);
-      node.append(element('strong', '', message.role === 'user' ? '你' : 'Aion'), element('div', '', message.text));
+      node.append(element('strong', '', message.role === 'user' ? message.actorUserId ?? '你' : 'Aion'), element('div', '', message.text));
+      if (message.createdAt) node.append(element('small', '', new Date(message.createdAt).toLocaleString('zh-TW')));
       return node;
     }));
-    status.textContent = `對話：${snapshot.name}（僅可存取你的 Aion 對話）`;
+    status.textContent = `對話：${snapshot.name}（由 Aion 驗證個人或 Team 權限）`;
     send.disabled = snapshot.runtime?.can_send_message === false;
   }
   try {
@@ -212,6 +215,7 @@ addForm.addEventListener('submit', async (event) => {
       method: 'POST',
       body: JSON.stringify({
         relativePath: select.value,
+        workspaceScope: select.selectedOptions[0]?.dataset.workspaceScope ?? 'user',
         title: document.querySelector('#preview-title-input').value,
       }),
     });

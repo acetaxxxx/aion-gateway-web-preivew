@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authenticateRequest } from './access.mjs';
-import { discoverCandidates, resolvePreviewDirectory, resolvePreviewFile, verifyPreviewFile } from './filesystem.mjs';
+import { discoverCandidates, resolveRegisteredPreview, resolvePreviewFile, verifyPreviewFile } from './filesystem.mjs';
 import { Previews } from './previews.mjs';
 import { PreviewChanges } from './changes.mjs';
 import { authenticateMcp, handleMcp } from './mcp.mjs';
@@ -46,7 +46,7 @@ async function safePreview(entry, admin, config) {
   let updatedAt = entry.updatedAt ?? entry.createdAt;
   if (entry.enabled) {
     try {
-      const preview = await resolvePreviewDirectory(config.previewScanRoot, entry.relativePath, { requireEntry: false });
+      const preview = await resolveRegisteredPreview(config, entry, { requireEntry: false });
       status = 'waiting';
       const index = await verifyPreviewFile(preview.directory, resolve(preview.directory, 'index.html')).catch(() => null);
       if (index) {
@@ -58,7 +58,7 @@ async function safePreview(entry, admin, config) {
   }
   const value = { slug: entry.slug, title: entry.title, enabled: entry.enabled, status, createdAt: entry.createdAt, updatedAt };
   if (entry.teamId) value.teamId = entry.teamId;
-  if (admin) value.relativePath = entry.relativePath;
+  if (admin) { value.relativePath = entry.relativePath; value.workspaceScope = entry.workspaceScope ?? 'user'; }
   return value;
 }
 
@@ -182,7 +182,15 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
 
       if (url.pathname === '/api/candidates' && request.method === 'GET') {
         if (!admin) return sendJson(response, 403, { error: 'Administrator access required' });
-        return sendJson(response, 200, { candidates: await discoverCandidates(config.previewScanRoot) });
+        const candidates = (await discoverCandidates(config.previewScanRoot)).map((entry) => ({ ...entry, workspaceScope: 'user' }));
+        if (config.teamPreviewScanRoot) {
+          const teams = await discoverCandidates(config.teamPreviewScanRoot).catch((error) => {
+            if (error.code === 'ENOENT') return [];
+            throw error;
+          });
+          candidates.push(...teams.map((entry) => ({ ...entry, workspaceScope: 'team' })));
+        }
+        return sendJson(response, 200, { candidates });
       }
 
       if (url.pathname === '/api/previews' && request.method === 'POST') {
@@ -286,7 +294,7 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
         const entries = await registry.list();
         const entry = entries.find((item) => item.slug === fileMatch[1] && item.enabled);
         if (!entry) return sendJson(response, 404, { error: 'Preview not found' });
-        const preview = await resolvePreviewDirectory(config.previewScanRoot, entry.relativePath);
+        const preview = await resolveRegisteredPreview(config, entry);
         const requestedPath = fileMatch[2] ?? '';
         const filePath = resolvePreviewFile(preview.directory, requestedPath);
         const verifiedPath = await verifyPreviewFile(preview.directory, filePath);

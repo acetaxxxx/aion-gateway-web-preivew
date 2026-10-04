@@ -33,6 +33,8 @@ export function loadConfig(env = process.env) {
     mcpToken,
     publicUrl,
     agentWorkspaceRoot: env.AION_WORKSPACE_ROOT ?? '/data/conversations/users',
+    teamPreviewScanRoot: env.PREVIEW_TEAM_SCAN_ROOT?.trim() || undefined,
+    teamAgentWorkspaceRoot: env.AION_TEAM_WORKSPACE_ROOT ?? '/data/teams',
     aionBackendUrl: env.AION_BACKEND_URL ?? 'http://aion-app:8080',
     aionUsers: new Map((env.AION_BACKEND_USERS ?? '').split(',').map((entry) => entry.trim()).filter(Boolean).map((entry) => {
       const colon = entry.indexOf(':');

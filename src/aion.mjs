@@ -86,8 +86,7 @@ export class AionBackend {
         id: item.id, role: item.position === 'right' ? 'user' : 'assistant',
         text: typeof item.content === 'string' ? item.content : item.content?.content ?? '',
         status: item.status, createdAt: item.created_at,
-        ...(item.actor_user_id ? { actorUserId: item.actor_user_id } : {}),
-        ...(item.actor_display_name ? { actorDisplayName: item.actor_display_name } : {}),
+        ...(typeof item.content?.actor_user_id === 'string' ? { actorUserId: item.content.actor_user_id } : {}),
       })),
       oldestCursor: page.oldest_cursor, hasMore: page.has_more_before,
     };

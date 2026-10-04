@@ -6,9 +6,14 @@ workspace directories are listed to the Access-authorized audience.
 
 ## Runtime contract
 
-- `PREVIEW_SCAN_ROOT` is the only filesystem subtree Gateway searches. The
+- `PREVIEW_SCAN_ROOT` is the personal filesystem subtree Gateway searches. The
   current Aion deployment layout uses `/data/conversations/users`; mount the
   same persistent Aion data directory read-only at `/aion-data`.
+- `PREVIEW_TEAM_SCAN_ROOT=/aion-data/teams` enables the separate Shared Team
+  subtree, mapped from `AION_TEAM_WORKSPACE_ROOT=/data/teams`. Do not set a
+  scan root to all of `/data`. Registry entries persist `workspaceScope: team`
+  for Team directories; older entries retain their original personal root and
+  URLs without migration. A Team path must match its bound Team ID.
 - `GATEWAY_DATA_DIR` stores only Gateway's preview registry and must be a
   separate persistent directory.
 - `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUDIENCE` are required. Gateway
@@ -38,6 +43,10 @@ workspace directories are listed to the Access-authorized audience.
   username:password. No unmatched identity falls back to another user. Aion
   authorizes every conversation request; a shared preview does not grant chat
   permissions. Team previews resolve the current Team Leader through Aion.
+  Team history uses `/api/teams/{id}/conversations/{leader}/messages`; sends use
+  `/api/teams/{id}/messages`, retaining the verified caller's identity. Owner and
+  active Collaborators are authorized by Aion; revoked/non-members are denied.
+  Human messages retain the Core content's actor identity and timestamp.
   Message history and sent/committed responses update through authenticated
   SSE snapshots every second; this is not a token-by-token stream.
 - `/api/previews/<slug>/events` sends authenticated SSE updates. Gateway polls

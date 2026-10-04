@@ -30,9 +30,9 @@ export class PreviewRegistry {
     }
   }
 
-  async add({ relativePath, title }) {
+  async add({ relativePath, title, workspaceScope = 'user', teamId }) {
     return this.#mutate(async (entries) => {
-      if (entries.some((entry) => entry.relativePath === relativePath)) {
+      if (entries.some((entry) => entry.relativePath === relativePath && (entry.workspaceScope ?? 'user') === workspaceScope)) {
         throw Object.assign(new Error('This directory is already registered'), { statusCode: 409 });
       }
       const id = randomUUID();
@@ -42,6 +42,7 @@ export class PreviewRegistry {
         slug: makeSlug(cleanTitle, id),
         title: cleanTitle,
         relativePath,
+        ...(workspaceScope === 'team' ? { workspaceScope, teamId } : {}),
         enabled: true,
         createdAt: new Date().toISOString(),
       };
@@ -75,13 +76,13 @@ export class PreviewRegistry {
     });
   }
 
-  async ensure({ relativePath, slug, title, teamId, conversationId }) {
+  async ensure({ relativePath, slug, title, teamId, conversationId, workspaceScope = 'user' }) {
     return this.#mutate(async (entries) => {
       const named = slug && entries.find((entry) => entry.slug === slug);
-      if (named && named.relativePath !== relativePath) {
+      if (named && (named.relativePath !== relativePath || (named.workspaceScope ?? 'user') !== workspaceScope)) {
         throw Object.assign(new Error('This slug belongs to a different preview'), { statusCode: 409 });
       }
-      const existing = named || entries.find((entry) => entry.relativePath === relativePath);
+      const existing = named || entries.find((entry) => entry.relativePath === relativePath && (entry.workspaceScope ?? 'user') === workspaceScope);
       if (existing) {
         // Enroll older/manual registrations without silently rebinding another
         // conversation or re-enabling an administrator-disabled preview.
@@ -97,6 +98,7 @@ export class PreviewRegistry {
       const entry = {
         id, slug: slug || makeSlug(cleanTitle, id), title: cleanTitle, relativePath,
         enabled: true, createdAt: new Date().toISOString(),
+        ...(workspaceScope === 'team' ? { workspaceScope } : {}),
         ...(teamId ? { teamId } : {}), ...(conversationId ? { conversationId } : {}),
       };
       entries.push(entry);

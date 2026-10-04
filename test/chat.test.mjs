@@ -57,7 +57,7 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
         let raw = '';
         for await (const chunk of request) raw += chunk;
         const content = JSON.parse(raw).content;
-        items.push({ id: 'm2', type: 'text', content: { content }, position: 'right', created_at: 2, actor_user_id: caller });
+        items.push({ id: 'm2', type: 'text', content: { content, actor_user_id: caller }, position: 'right', created_at: 2 });
         items.push({ id: 'm3', type: 'text', content: { content: 'Updated website' }, position: 'left', created_at: 3 });
         return json(200, { success: true, data: { accepted: true } });
     }
@@ -120,7 +120,8 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
     const memberHeaders = { authorization: 'Bearer collaborator@example.com' };
     assert.equal((await fetch(`${path}/messages`, { headers: memberHeaders })).status, 200);
     assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Member edit' }) })).status, 202);
-    assert.equal(items.find((item) => item.content.content === 'Member edit').actor_user_id, 'collaborator@example.com');
+    const memberSnapshot = await (await fetch(`${path}/messages`, { headers: memberHeaders })).json();
+    assert.equal(memberSnapshot.messages.find((item) => item.text === 'Member edit').actorUserId, 'collaborator@example.com');
     collaboratorActive = false;
     assert.equal((await fetch(`${path}/messages`, { headers: memberHeaders })).status, 403);
     assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Denied edit' }) })).status, 403);
