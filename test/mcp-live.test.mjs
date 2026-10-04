@@ -112,6 +112,9 @@ test('Agent MCP registers stable URLs and authenticated viewers receive live fil
     assert.equal((await client.callTool({ name: 'preview_get', arguments: { slug: 'demo' } })).isError, true);
     const restored = await client.callTool({ name: 'preview_create', arguments: { path: 'user/project', slug: 'demo' } });
     assert.equal(restored.isError, undefined);
+    const enrolled = await client.callTool({ name: 'preview_create', arguments: { path: 'user/project', conversationId: 'current-conv' } });
+    assert.equal(enrolled.structuredContent.id, restored.structuredContent.id);
+    assert.equal(enrolled.structuredContent.conversationId, 'current-conv');
   } finally {
     controller.abort();
     await client.close();

@@ -82,7 +82,16 @@ export class PreviewRegistry {
         throw Object.assign(new Error('This slug belongs to a different preview'), { statusCode: 409 });
       }
       const existing = named || entries.find((entry) => entry.relativePath === relativePath);
-      if (existing) return existing;
+      if (existing) {
+        // Enroll older/manual registrations without silently rebinding another
+        // conversation or re-enabling an administrator-disabled preview.
+        if (conversationId && !existing.conversationId) {
+          existing.conversationId = conversationId;
+          if (teamId && !existing.teamId) existing.teamId = teamId;
+          existing.updatedAt = new Date().toISOString();
+        }
+        return existing;
+      }
       const id = randomUUID();
       const cleanTitle = title?.trim().slice(0, 120) || relativePath.split('/').at(-1);
       const entry = {
