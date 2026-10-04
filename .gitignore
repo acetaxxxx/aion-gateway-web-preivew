@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+node_modules/
+coverage/
+.gateway-data/
+test-results/
+playwright-report/

@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+.gateway-data
+coverage
+*.log
+e2e
+playwright.config.mjs
+test-results
+playwright-report
