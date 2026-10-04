@@ -51,11 +51,27 @@ export class PreviewRegistry {
   }
 
   async setEnabled(slug, enabled) {
+    return this.update(slug, { enabled });
+  }
+
+  async update(slug, changes) {
     return this.#mutate(async (entries) => {
       const entry = entries.find((item) => item.slug === slug);
       if (!entry) return null;
-      entry.enabled = enabled;
+      for (const key of ['title', 'enabled', 'teamId', 'conversationId']) {
+        if (changes[key] !== undefined) entry[key] = key === 'title' ? changes[key].trim() : changes[key];
+      }
+      entry.updatedAt = new Date().toISOString();
       return entry;
+    });
+  }
+
+  async remove(slug) {
+    return this.#mutate(async (entries) => {
+      const index = entries.findIndex((entry) => entry.slug === slug);
+      if (index < 0) return false;
+      entries.splice(index, 1);
+      return true;
     });
   }
 

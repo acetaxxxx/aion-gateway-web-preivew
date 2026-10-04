@@ -39,6 +39,11 @@ select, input { min-width: 0; border: 1px solid #d4dfd7; border-radius: 10px; pa
 .preview-toolbar span { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 iframe { display: block; width: 100%; height: min(76vh, 900px); border: 0; border-top: 1px solid #e4ebe6; background: #fff; }
 .hidden { display: none !important; }
+.chat-panel { padding: 1rem; border-top: 1px solid #e4ebe6; }
+.chat-messages { max-height: 350px; overflow-y: auto; margin-top: 1rem; }
+.chat-message { padding: 0.8rem; margin-bottom: 0.6rem; border-radius: 10px; background: #f2f5f2; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-message.user { background: #e1f0e7; }
+textarea { display: block; width: 100%; min-height: 90px; margin-bottom: 0.75rem; padding: 0.75rem; font: inherit; border: 1px solid #d4dfd7; border-radius: 10px; }
 @media (max-width: 720px) {
   .layout { width: min(100% - 1.25rem, 1080px); padding-top: 1.5rem; }
   .form-row { grid-template-columns: 1fr; }

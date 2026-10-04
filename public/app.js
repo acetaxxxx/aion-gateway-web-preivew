@@ -5,6 +5,8 @@ const adminStatus = document.querySelector('#admin-status');
 const select = document.querySelector('#candidate-select');
 const addForm = document.querySelector('#add-preview-form');
 const previewSlug = document.body.dataset.previewSlug;
+let catalog = [];
+let catalogAdmin = false;
 
 async function request(path, options) {
   const response = await fetch(path, {
@@ -36,6 +38,8 @@ function renderPreview(entry, admin) {
   const card = element('article', 'preview-card');
   const details = element('div');
   details.append(element('h3', '', entry.title));
+  const state = { ready: '可用', waiting: '等待網頁', missing: '目錄不存在', disabled: '已停用' };
+  details.append(element('p', '', `${state[entry.status] ?? entry.status}${entry.teamId ? ` · Team ${entry.teamId}` : ''} · ${new Date(entry.updatedAt).toLocaleString('zh-TW')}`));
   if (admin) details.append(element('p', '', entry.relativePath));
   const actions = element('div', 'preview-actions');
   const open = element('a', '', '開啟');
@@ -53,6 +57,26 @@ function renderPreview(entry, admin) {
       } catch (error) { adminStatus.textContent = error.message; }
     });
     actions.append(toggle);
+    const rename = element('button', 'secondary', '改名');
+    rename.type = 'button';
+    rename.addEventListener('click', async () => {
+      const title = window.prompt('新的顯示名稱（網址不變）', entry.title);
+      if (!title?.trim()) return;
+      try {
+        await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'PATCH', body: JSON.stringify({ title }) });
+        await loadPreviews(admin);
+      } catch (error) { adminStatus.textContent = error.message; }
+    });
+    const remove = element('button', 'secondary', '移除');
+    remove.type = 'button';
+    remove.addEventListener('click', async () => {
+      if (!window.confirm('移除此預覽？工作目錄與檔案不會刪除。')) return;
+      try {
+        await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'DELETE' });
+        await loadPreviews(admin);
+      } catch (error) { adminStatus.textContent = error.message; }
+    });
+    actions.append(rename, remove);
   }
   card.append(details, actions);
   return card;
@@ -60,8 +84,71 @@ function renderPreview(entry, admin) {
 
 async function loadPreviews(admin) {
   const { previews } = await request('/api/previews');
-  list.replaceChildren(...previews.map((entry) => renderPreview(entry, admin)));
-  emptyState.classList.toggle('hidden', previews.length > 0);
+  catalog = previews;
+  catalogAdmin = admin;
+  renderCatalog();
+}
+
+function renderCatalog() {
+  const search = document.querySelector('#preview-search').value.toLowerCase();
+  const entries = catalog.filter((entry) => `${entry.title} ${entry.teamId ?? ''}`.toLowerCase().includes(search));
+  list.replaceChildren(...entries.map((entry) => renderPreview(entry, catalogAdmin)));
+  emptyState.classList.toggle('hidden', entries.length > 0);
+}
+
+async function showChat(slug) {
+  const path = `/api/previews/${encodeURIComponent(slug)}/chat`;
+  const status = document.querySelector('#chat-status');
+  const messages = document.querySelector('#chat-messages');
+  const older = document.querySelector('#chat-older');
+  const send = document.querySelector('#chat-send');
+  const history = new Map();
+  let cursor;
+  function render(snapshot) {
+    for (const message of snapshot.messages) history.set(message.id, message);
+    messages.replaceChildren(...[...history.values()].sort((a, b) => a.createdAt - b.createdAt).map((message) => {
+      const node = element('article', `chat-message ${message.role}`);
+      node.append(element('strong', '', message.role === 'user' ? '你' : 'Aion'), element('div', '', message.text));
+      return node;
+    }));
+    status.textContent = `對話：${snapshot.name}（僅可存取你的 Aion 對話）`;
+    send.disabled = snapshot.runtime?.can_send_message === false;
+  }
+  try {
+    const snapshot = await request(`${path}/messages`);
+    render(snapshot);
+    cursor = snapshot.oldestCursor;
+    older.classList.toggle('hidden', !snapshot.hasMore);
+  } catch (error) {
+    status.textContent = error.message;
+    send.disabled = true;
+    return;
+  }
+  older.addEventListener('click', async () => {
+    try {
+      const snapshot = await request(`${path}/messages?before=${encodeURIComponent(cursor)}`);
+      render(snapshot);
+      cursor = snapshot.oldestCursor;
+      older.classList.toggle('hidden', !snapshot.hasMore);
+    } catch (error) { status.textContent = error.message; }
+  });
+  const events = new EventSource(`${path}/events`);
+  events.addEventListener('messages', (event) => render(JSON.parse(event.data)));
+  for (const name of ['disabled', 'unavailable']) events.addEventListener(name, () => {
+    events.close(); send.disabled = true; status.textContent = '對話已無法存取，請重新整理確認登入與預覽狀態。';
+  });
+  events.onerror = () => { status.textContent = '正在重新連接 Aion 對話…'; };
+  window.addEventListener('pagehide', () => events.close(), { once: true });
+  document.querySelector('#chat-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    send.disabled = true;
+    const input = document.querySelector('#chat-input');
+    try {
+      await request(`${path}/messages`, { method: 'POST', body: JSON.stringify({ content: input.value }) });
+      input.value = '';
+      status.textContent = '已交給 Aion；回覆與網頁修改將自動更新。';
+    } catch (error) { status.textContent = error.message; send.disabled = false; }
+  });
 }
 
 async function showPreview() {
@@ -98,6 +185,7 @@ async function showPreview() {
   events.onerror = () => { status.textContent = '正在重新連接即時預覽…'; };
   window.addEventListener('pagehide', () => events.close(), { once: true });
   document.querySelector('#open-preview').href = `/p/${encodeURIComponent(entry.slug)}`;
+  await showChat(entry.slug);
 }
 
 async function start() {
@@ -138,4 +226,5 @@ document.querySelector('#refresh-candidates').addEventListener('click', async ()
   catch (error) { adminStatus.textContent = error.message; }
 });
 
+document.querySelector('#preview-search').addEventListener('input', renderCatalog);
 start();

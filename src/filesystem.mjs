@@ -24,7 +24,7 @@ export function validateRelativePath(value) {
   return segments.join('/');
 }
 
-export async function resolvePreviewDirectory(scanRoot, relativePath) {
+export async function resolvePreviewDirectory(scanRoot, relativePath, { requireEntry = true } = {}) {
   const cleanRelativePath = validateRelativePath(relativePath);
   const root = await realpath(scanRoot);
   const lexicalPath = resolve(root, cleanRelativePath);
@@ -38,7 +38,7 @@ export async function resolvePreviewDirectory(scanRoot, relativePath) {
   }
   const targetStat = await stat(target);
   const entryStat = await stat(resolve(target, 'index.html')).catch(() => null);
-  if (!targetStat.isDirectory() || !entryStat?.isFile()) {
+  if (!targetStat.isDirectory() || (requireEntry && !entryStat?.isFile())) {
     throw Object.assign(new Error('Preview directory must contain an index.html file'), { statusCode: 400 });
   }
   return { root, directory: target, relativePath: cleanRelativePath };

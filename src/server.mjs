@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { discoverCandidates, resolvePreviewDirectory, resolvePreviewFile, verify
 import { Previews } from './previews.mjs';
 import { PreviewChanges } from './changes.mjs';
 import { authenticateMcp, handleMcp } from './mcp.mjs';
+import { AionBackend } from './aion.mjs';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const MAX_BODY_BYTES = 16 * 1024;
@@ -40,8 +41,23 @@ function isAdmin(identity, config) {
   return config.adminEmails.has(identity.email);
 }
 
-function safePreview(entry, admin) {
-  const value = { slug: entry.slug, title: entry.title, enabled: entry.enabled };
+async function safePreview(entry, admin, config) {
+  let status = entry.enabled ? 'missing' : 'disabled';
+  let updatedAt = entry.updatedAt ?? entry.createdAt;
+  if (entry.enabled) {
+    try {
+      const preview = await resolvePreviewDirectory(config.previewScanRoot, entry.relativePath, { requireEntry: false });
+      status = 'waiting';
+      const index = await verifyPreviewFile(preview.directory, resolve(preview.directory, 'index.html')).catch(() => null);
+      if (index) {
+        status = 'ready';
+        const modified = (await stat(index)).mtime.toISOString();
+        if (modified > updatedAt) updatedAt = modified;
+      }
+    } catch { /* Keep missing state without exposing filesystem errors. */ }
+  }
+  const value = { slug: entry.slug, title: entry.title, enabled: entry.enabled, status, createdAt: entry.createdAt, updatedAt };
+  if (entry.teamId) value.teamId = entry.teamId;
   if (admin) value.relativePath = entry.relativePath;
   return value;
 }
@@ -99,7 +115,7 @@ function adminPage(slug) {
   ));
 }
 
-export function createGatewayServer({ config, registry, changes = new PreviewChanges({ config, registry }), authenticate = (request) => authenticateRequest(request, config) }) {
+export function createGatewayServer({ config, registry, backend = new AionBackend(config), changes = new PreviewChanges({ config, registry }), authenticate = (request) => authenticateRequest(request, config) }) {
   const previews = new Previews(config, registry);
   const server = createServer(async (request, response) => {
     try {
@@ -118,6 +134,12 @@ export function createGatewayServer({ config, registry, changes = new PreviewCha
       const identity = await authenticate(request);
       if (!identity) return sendJson(response, 401, { error: 'Cloudflare Access authentication required' });
       const admin = isAdmin(identity, config);
+      if (['POST', 'PATCH', 'DELETE'].includes(request.method)) {
+        const origin = request.headers.origin;
+        if (request.headers['sec-fetch-site'] === 'cross-site' || (origin && origin !== config.publicUrl)) {
+          return sendJson(response, 403, { error: 'Same-origin request required' });
+        }
+      }
 
       if (url.pathname === '/' && request.method === 'GET') {
         response.writeHead(200, {
@@ -155,7 +177,7 @@ export function createGatewayServer({ config, registry, changes = new PreviewCha
 
       if (url.pathname === '/api/previews' && request.method === 'GET') {
         const entries = (await registry.list()).filter((entry) => admin || entry.enabled);
-        return sendJson(response, 200, { previews: entries.map((entry) => safePreview(entry, admin)) });
+        return sendJson(response, 200, { previews: await Promise.all(entries.map((entry) => safePreview(entry, admin, config))) });
       }
 
       if (url.pathname === '/api/candidates' && request.method === 'GET') {
@@ -170,7 +192,7 @@ export function createGatewayServer({ config, registry, changes = new PreviewCha
           return sendJson(response, 400, { error: 'title must be a string' });
         }
         const entry = await previews.register(body);
-        return sendJson(response, 201, { preview: safePreview(entry, true) });
+        return sendJson(response, 201, { preview: await safePreview(entry, true, config) });
       }
 
       const eventsMatch = url.pathname.match(/^\/api\/previews\/([a-z0-9-]+)\/events$/);
@@ -199,13 +221,64 @@ export function createGatewayServer({ config, registry, changes = new PreviewCha
       if (toggleMatch && request.method === 'PATCH') {
         if (!admin) return sendJson(response, 403, { error: 'Administrator access required' });
         const body = await readJson(request);
-        if (typeof body.enabled !== 'boolean') {
+        if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
           return sendJson(response, 400, { error: 'enabled must be a boolean' });
         }
-        const entry = await registry.setEnabled(toggleMatch[1], body.enabled);
+        if (body.title !== undefined && (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 120)) {
+          return sendJson(response, 400, { error: 'title must be a non-empty string of at most 120 characters' });
+        }
+        if (body.enabled === undefined && body.title === undefined) return sendJson(response, 400, { error: 'A title or enabled value is required' });
+        const entry = await registry.update(toggleMatch[1], { title: body.title, enabled: body.enabled });
         return entry
-          ? sendJson(response, 200, { preview: safePreview(entry, true) })
+          ? sendJson(response, 200, { preview: await safePreview(entry, true, config) })
           : sendJson(response, 404, { error: 'Preview not found' });
+      }
+
+      if (toggleMatch && request.method === 'DELETE') {
+        if (!admin) return sendJson(response, 403, { error: 'Administrator access required' });
+        return (await registry.remove(toggleMatch[1]))
+          ? sendJson(response, 200, { removed: true }) : sendJson(response, 404, { error: 'Preview not found' });
+      }
+
+      const chatMatch = url.pathname.match(/^\/api\/previews\/([a-z0-9-]+)\/chat\/(messages|events)$/);
+      if (chatMatch) {
+        const entry = (await registry.list()).find((item) => item.slug === chatMatch[1] && item.enabled);
+        if (!entry) return sendJson(response, 404, { error: 'Preview not found' });
+        if (chatMatch[2] === 'messages' && request.method === 'GET') {
+          return sendJson(response, 200, await backend.messages(identity.email, entry, url.searchParams.get('before')));
+        }
+        if (chatMatch[2] === 'messages' && request.method === 'POST') {
+          const body = await readJson(request);
+          if (typeof body.content !== 'string' || !body.content.trim() || body.content.length > 8000) {
+            return sendJson(response, 400, { error: 'content must be a non-empty string of at most 8000 characters' });
+          }
+          return sendJson(response, 202, { message: await backend.send(identity.email, entry, body.content.trim()) });
+        }
+        if (chatMatch[2] === 'events' && request.method === 'GET') {
+          let snapshot = await backend.messages(identity.email, entry);
+          response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
+          response.write(`retry: 1000\nevent: messages\ndata: ${JSON.stringify(snapshot)}\n\n`);
+          let timer; let stopped = false;
+          const expiry = setTimeout(() => response.end(), 60_000); expiry.unref();
+          const poll = async () => {
+            try {
+              const current = (await registry.list()).find((item) => item.slug === entry.slug && item.enabled);
+              if (!current) { response.write('event: disabled\ndata: {}\n\n'); response.end(); return; }
+              const next = await backend.messages(identity.email, current);
+              if (stopped) return;
+              if (JSON.stringify(next) !== JSON.stringify(snapshot)) {
+                response.write(`event: messages\ndata: ${JSON.stringify(next)}\n\n`); snapshot = next;
+              } else response.write(': heartbeat\n\n');
+            } catch {
+              if (!stopped) { response.write('event: unavailable\ndata: {}\n\n'); response.end(); }
+              return;
+            }
+            if (!stopped) { timer = setTimeout(() => { void poll(); }, 1000); timer.unref(); }
+          };
+          timer = setTimeout(() => { void poll(); }, 1000); timer.unref();
+          response.once('close', () => { stopped = true; clearTimeout(timer); clearTimeout(expiry); });
+          return;
+        }
       }
 
       const fileMatch = url.pathname.match(/^\/preview\/([a-z0-9-]+)(?:\/(.*))?$/);

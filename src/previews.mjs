@@ -25,7 +25,7 @@ export class Previews {
 
   async register({ path, relativePath, title, slug, teamId, conversationId }, { reuse = false } = {}) {
     const requested = relativePath ?? this.relativePath(path);
-    const validated = await resolvePreviewDirectory(this.config.previewScanRoot, requested);
+    const validated = await resolvePreviewDirectory(this.config.previewScanRoot, requested, { requireEntry: !reuse });
     if (reuse) return this.registry.ensure({ relativePath: validated.relativePath, title, slug, teamId, conversationId });
     return this.registry.add({ relativePath: validated.relativePath, title });
   }
@@ -35,6 +35,7 @@ export class Previews {
       id: entry.id, slug: entry.slug, title: entry.title, enabled: entry.enabled,
       url: `${this.config.publicUrl}/p/${entry.slug}`,
       workspacePath: resolve(this.config.agentWorkspaceRoot, entry.relativePath),
+      createdAt: entry.createdAt, updatedAt: entry.updatedAt ?? entry.createdAt,
       ...(entry.teamId ? { teamId: entry.teamId } : {}),
       ...(entry.conversationId ? { conversationId: entry.conversationId } : {}),
     };

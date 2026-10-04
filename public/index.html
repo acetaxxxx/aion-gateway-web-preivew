@@ -45,6 +45,17 @@
         </div>
         <p class="status" id="preview-status" role="status">正在連接即時預覽…</p>
         <iframe id="preview-frame" title="工作區預覽" sandbox="allow-scripts"></iframe>
+        <section class="chat-panel" aria-labelledby="chat-heading">
+          <h2 id="chat-heading">與 Aion 繼續協作</h2>
+          <p class="status" id="chat-status" role="status">正在載入綁定對話…</p>
+          <button class="secondary hidden" id="chat-older" type="button">載入較早訊息</button>
+          <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+          <form id="chat-form">
+            <label for="chat-input">訊息</label>
+            <textarea id="chat-input" maxlength="8000" required placeholder="請 Aion 修改這個網頁…"></textarea>
+            <button id="chat-send" type="submit">傳送</button>
+          </form>
+        </section>
       </section>
 
       <section class="panel" id="preview-list-panel">
@@ -54,6 +65,8 @@
             <h2>可用預覽</h2>
           </div>
         </div>
+        <label for="preview-search">搜尋預覽</label>
+        <input id="preview-search" type="search" placeholder="名稱或 Team" />
         <div class="preview-list" id="preview-list" aria-live="polite"></div>
         <p class="empty-state hidden" id="empty-state">目前沒有已啟用的預覽。</p>
       </section>

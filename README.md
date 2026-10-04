@@ -23,10 +23,23 @@ workspace directories are listed to the Access-authorized audience.
   manage the shared preview catalog. Other authenticated Access users can see
   enabled previews. All users allowed by the Cloudflare Access policy share
   that enabled catalog in this MVP.
-- Trusted Aion Agents can register/reuse ready directories with `preview_create`,
+- Trusted Aion Agents can register/reuse existing directories with `preview_create`,
   retrieve them with `preview_get`, and list them with `preview_list`. Creation
   returns a stable `/p/<slug>` URL, accepts an optional slug and conversation/team
   metadata, and never re-enables an administrator-disabled preview implicitly.
+  Register before index.html is ready to start a waiting preview. Tools also
+  include `preview_update`, `preview_rename`, `preview_bind_conversation`, and
+  `preview_remove`. Renaming keeps the URL; removal never deletes workspace files.
+- The portal supports name/Team search, ready/waiting/missing/disabled state,
+  modification timestamps, and administrator rename/enable/disable/remove.
+- In-page chat uses `AION_BACKEND_URL` (default internal Aion WebUI) and
+  server-side `AION_BACKEND_USERS` with the same identity mapping as Aion.
+  Supported forms are email:password, email:username:password, and
+  username:password. No unmatched identity falls back to another user. Aion
+  authorizes every conversation request; a shared preview does not grant chat
+  permissions. Team previews resolve the current Team Leader through Aion.
+  Message history and sent/committed responses update through authenticated
+  SSE snapshots every second; this is not a token-by-token stream.
 - `/api/previews/<slug>/events` sends authenticated SSE updates. Gateway polls
   only previews with connected viewers, debounces file changes, and detects
   HTML/CSS/JS/assets changes on bind mounts. The shell reloads its iframe without
@@ -87,11 +100,14 @@ Infra owns the dependency-free stdio bridge, MCP import configuration, and
 Agent instructions under `aion-self-deploy/gateway/`. The bridge calls
 `http://workspace-gateway:3000/mcp` on the Compose network using the token from
 the Aion container environment; no Cloudflare login is needed for Agent calls.
-Import and enable the MCP in Aion once per user and select it for conversations
-that use an explicit MCP selection. No files need to be copied or registered by
+The paired Core release automatically adds the MCP and instructions at Agent
+build time via `AIONUI_WORKSPACE_PREVIEW_BRIDGE`, including sessions with explicit
+user MCP selection. Restart existing sessions after deployment. The manual
+import is only a fallback for older Core images. No files need to be copied or registered by
 an administrator for each new website.
 
 The HTTP transport follows the [MCP Streamable HTTP specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 via the official SDK. Browser Access authorization and trusted Agent bearer
 authorization are separate. `teamId`/`conversationId` currently store metadata;
-they do not provide per-user visibility or in-page chat.
+they do not provide per-user preview visibility. They bind in-page chat while
+Aion independently checks conversation access for the verified viewer.

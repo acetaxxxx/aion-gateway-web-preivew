@@ -28,7 +28,7 @@ export async function handleMcp(request, response, { config, registry, previews,
     instructions: 'When an HTML artifact is ready in the current Aion workspace, call preview_create and return its URL to the user. Continue editing the same directory; the browser updates automatically. Do not upload files or register again after each edit. All registered previews are shared with the configured Cloudflare Access audience.',
   });
   server.registerTool('preview_create', {
-    description: 'Register or reuse an HTML directory under the current Aion workspace and return a stable browser URL. The directory must contain index.html. Existing disabled previews remain disabled.',
+    description: 'Start a preview: register or reuse a project directory in the current Aion workspace and return its stable browser URL to the user. You may register before index.html is ready; the page waits and updates when files appear. Existing disabled previews remain disabled.',
     inputSchema: {
       path: z.string().min(1).max(1024), slug: slugSchema.optional(), title: z.string().max(120).optional(),
       teamId: z.string().max(128).optional(), conversationId: z.string().max(128).optional(),
@@ -48,6 +48,30 @@ export async function handleMcp(request, response, { config, registry, previews,
     description: 'List previews in the shared Gateway catalog. Visibility is shared, not filtered by team or conversation.',
     inputSchema: {}, annotations: { readOnlyHint: true },
   }, async () => result({ previews: (await registry.list()).map((entry) => previews.describe(entry)) }));
+  const changesSchema = {
+    slug: slugSchema, title: z.string().trim().min(1).max(120).optional(), enabled: z.boolean().optional(),
+    teamId: z.string().max(128).optional(), conversationId: z.string().max(128).optional(),
+  };
+  async function update({ slug, ...changes }) {
+    const entry = await registry.update(slug, changes);
+    return entry ? result(previews.describe(entry)) : { content: [{ type: 'text', text: 'Preview not found' }], isError: true };
+  }
+  server.registerTool('preview_update', {
+    description: 'Update preview display metadata or enable/disable it. The URL and workspace directory stay stable.',
+    inputSchema: changesSchema,
+  }, update);
+  server.registerTool('preview_rename', {
+    description: 'Rename the displayed title without changing the stable URL.',
+    inputSchema: { slug: slugSchema, title: z.string().trim().min(1).max(120) },
+  }, update);
+  server.registerTool('preview_bind_conversation', {
+    description: 'Bind the preview to its Aion conversation or Team Leader for in-page chat. Aion still enforces each viewer\'s chat permissions.',
+    inputSchema: { slug: slugSchema, conversationId: z.string().min(1).max(128), teamId: z.string().max(128).optional() },
+  }, update);
+  server.registerTool('preview_remove', {
+    description: 'Remove only the preview registration. Workspace files are never deleted.',
+    inputSchema: { slug: slugSchema }, annotations: { destructiveHint: true },
+  }, async ({ slug }) => result({ removed: await registry.remove(slug) }));
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   response.on('close', () => { void transport.close(); void server.close(); });
   await server.connect(transport);

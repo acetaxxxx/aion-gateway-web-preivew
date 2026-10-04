@@ -60,7 +60,13 @@ test('admin can register a preview and viewers can only see enabled entries', as
   assert.equal(preview.title, 'Demo');
 
   const listing = await fetch(`${origin}/api/previews`, { headers: headers('viewer') });
-  assert.deepEqual((await listing.json()).previews, [{ slug: preview.slug, title: 'Demo', enabled: true }]);
+  const [listed] = (await listing.json()).previews;
+  assert.equal(listed.slug, preview.slug);
+  assert.equal(listed.title, 'Demo');
+  assert.equal(listed.enabled, true);
+  assert.equal(listed.status, 'ready');
+  assert.ok(Number.isFinite(Date.parse(listed.updatedAt)));
+  assert.equal(listed.relativePath, undefined);
   assert.equal((await fetch(`${origin}/preview/${preview.slug}/index.html`, {
     headers: { ...headers('viewer'), 'sec-fetch-dest': 'iframe' },
   })).status, 200);

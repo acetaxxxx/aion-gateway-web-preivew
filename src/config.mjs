@@ -14,8 +14,8 @@ export function loadConfig(env = process.env) {
 
   const mcpToken = env.GATEWAY_MCP_TOKEN?.trim() ?? '';
   let publicUrl;
-  if (mcpToken) {
-    if (mcpToken.length < 32) throw new Error('GATEWAY_MCP_TOKEN must contain at least 32 characters');
+  if (mcpToken && mcpToken.length < 32) throw new Error('GATEWAY_MCP_TOKEN must contain at least 32 characters');
+  if (mcpToken || env.GATEWAY_PUBLIC_URL) {
     const parsed = new URL(required('GATEWAY_PUBLIC_URL', env.GATEWAY_PUBLIC_URL));
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
       throw new Error('GATEWAY_PUBLIC_URL must be an HTTPS origin');
@@ -33,5 +33,15 @@ export function loadConfig(env = process.env) {
     mcpToken,
     publicUrl,
     agentWorkspaceRoot: env.AION_WORKSPACE_ROOT ?? '/data/conversations/users',
+    aionBackendUrl: env.AION_BACKEND_URL ?? 'http://aion-app:8080',
+    aionUsers: new Map((env.AION_BACKEND_USERS ?? '').split(',').map((entry) => entry.trim()).filter(Boolean).map((entry) => {
+      const colon = entry.indexOf(':');
+      if (colon < 1) throw new Error('AION_BACKEND_USERS must use identity:password or email:username:password entries');
+      const identity = entry.slice(0, colon);
+      const secondColon = entry.indexOf(':', colon + 1);
+      const mapped = identity.includes('@') && secondColon > colon;
+      const username = mapped ? entry.slice(colon + 1, secondColon) : identity;
+      return [identity.toLowerCase(), { username, password: entry.slice(mapped ? secondColon + 1 : colon + 1) }];
+    })),
   };
 }

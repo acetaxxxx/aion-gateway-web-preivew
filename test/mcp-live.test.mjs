@@ -14,7 +14,6 @@ test('Agent MCP registers stable URLs and authenticated viewers receive live fil
   const scanRoot = join(root, 'data');
   const project = join(scanRoot, 'user', 'project');
   await mkdir(project, { recursive: true });
-  await writeFile(join(project, 'index.html'), '<h1>First version</h1>');
   const config = {
     previewScanRoot: scanRoot, agentWorkspaceRoot: '/data/conversations/users',
     publicUrl: 'https://preview.example.com', mcpToken: 'test-token-'.repeat(4), adminEmails: new Set(),
@@ -38,13 +37,18 @@ test('Agent MCP registers stable URLs and authenticated viewers receive live fil
     await client.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
       requestInit: { headers: { authorization: `Bearer ${config.mcpToken}` } },
     }));
-    assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name), ['preview_create', 'preview_get', 'preview_list']);
+    assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name), [
+      'preview_create', 'preview_get', 'preview_list', 'preview_update',
+      'preview_rename', 'preview_bind_conversation', 'preview_remove',
+    ]);
     const created = await client.callTool({ name: 'preview_create', arguments: {
       path: '/data/conversations/users/user/project', slug: 'demo', title: 'Demo', conversationId: 'conv-1',
     } });
     const preview = created.structuredContent;
     assert.equal(preview.url, 'https://preview.example.com/p/demo');
     assert.equal(preview.conversationId, 'conv-1');
+    const catalog = await fetch(`${origin}/api/previews`, { headers: { authorization: 'Bearer viewer' } });
+    assert.equal((await catalog.json()).previews[0].status, 'waiting');
     const repeated = await client.callTool({ name: 'preview_create', arguments: { path: 'user/project', slug: 'demo' } });
     assert.equal(repeated.structuredContent.id, preview.id);
     assert.equal((await registry.list()).length, 1);
@@ -82,7 +86,9 @@ test('Agent MCP registers stable URLs and authenticated viewers receive live fil
       }
     }
     const initial = await event('ready');
-    assert.equal(initial.available, true);
+    assert.equal(initial.available, false);
+    await writeFile(join(project, 'index.html'), '<h1>First version</h1>');
+    assert.equal((await event('reload')).available, true);
     await writeFile(join(project, 'asset.css'), 'body { color: red }');
     const updated = await event('reload');
     assert.notEqual(updated.revision, initial.revision);
@@ -95,6 +101,17 @@ test('Agent MCP registers stable URLs and authenticated viewers receive live fil
     assert.equal((await fetch(`${origin}/api/previews/demo/events`, { headers: { authorization: 'Bearer viewer' } })).status, 404);
     const disabled = await client.callTool({ name: 'preview_create', arguments: { path: 'user/project', slug: 'demo' } });
     assert.equal(disabled.structuredContent.enabled, false);
+    const renamed = await client.callTool({ name: 'preview_rename', arguments: { slug: 'demo', title: 'Renamed' } });
+    assert.equal(renamed.structuredContent.title, 'Renamed');
+    assert.equal(renamed.structuredContent.url, preview.url);
+    const bound = await client.callTool({ name: 'preview_bind_conversation', arguments: { slug: 'demo', conversationId: 'conv-2' } });
+    assert.equal(bound.structuredContent.conversationId, 'conv-2');
+    await client.callTool({ name: 'preview_update', arguments: { slug: 'demo', enabled: true } });
+    assert.equal((await client.callTool({ name: 'preview_get', arguments: { slug: 'demo' } })).structuredContent.enabled, true);
+    await client.callTool({ name: 'preview_remove', arguments: { slug: 'demo' } });
+    assert.equal((await client.callTool({ name: 'preview_get', arguments: { slug: 'demo' } })).isError, true);
+    const restored = await client.callTool({ name: 'preview_create', arguments: { path: 'user/project', slug: 'demo' } });
+    assert.equal(restored.isError, undefined);
   } finally {
     controller.abort();
     await client.close();
