@@ -73,6 +73,7 @@ test(`${scope} Agent creates a website and returns a link that updates HTML, CSS
       try { return parent.document.body !== undefined; } catch { return false; }
     })).toBe(false);
     await expect(page.locator('#chat-messages')).toContainText('Hello from Aion');
+    await page.locator('#chat-toggle').click();
     await page.locator('#chat-input').fill('Change the heading');
     await page.locator('#chat-send').click();
     await expect(page.locator('#chat-messages')).toContainText('Website updated');
