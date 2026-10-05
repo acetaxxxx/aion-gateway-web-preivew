@@ -31,8 +31,12 @@ select, input { min-width: 0; border: 1px solid #d4dfd7; border-radius: 10px; pa
 .preview-list { display: grid; gap: 0.65rem; margin-top: 1.25rem; }
 .preview-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 1px solid #e4ebe6; border-radius: 12px; padding: 1rem; }
 .preview-card h3 { margin: 0 0 0.3rem; font-size: 1rem; }
+.preview-card > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.preview-card h3 a { text-decoration: none; }
+.preview-card h3 a:hover { text-decoration: underline; }
+.preview-card .preview-path { margin-bottom: 0.3rem; }
 .preview-card p { margin: 0; color: #718177; font-size: 0.82rem; overflow-wrap: anywhere; }
-.preview-actions { display: flex; align-items: center; gap: 0.8rem; }
+.preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; }
 .empty-state { margin: 1.25rem 0 0; color: #718177; }
 .preview-shell { overflow: hidden; }
 .preview-toolbar { min-height: 3.25rem; padding: 0.65rem 1rem; background: #fff; font-size: 0.88rem; }

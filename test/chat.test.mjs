@@ -30,6 +30,7 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
   await writeFile(join(project, 'index.html'), '<h1>Preview</h1>');
   const items = [{ id: 'm1', type: 'text', content: { content: 'Welcome' }, position: 'left', created_at: 1 }];
   let expired = true;
+  let collaboratorActive = true;
   const backend = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://backend');
     const json = (status, value) => response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(value));
@@ -40,23 +41,27 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
       if (password !== 'server-only-password') return json(401, { success: false });
       return json(200, { success: true, token: username });
     }
-    if (request.headers.authorization !== 'Bearer owner@example.com') return json(403, { success: false });
+    const caller = request.headers.authorization?.replace('Bearer ', '');
+    if (caller !== 'owner@example.com' && !(caller === 'collaborator@example.com' && collaboratorActive)) return json(403, { success: false });
     if (expired) { expired = false; return json(401, { success: false }); }
     if (url.pathname === '/api/teams/team') return json(200, { success: true, data: {
       leader_assistant_id: 'lead-slot', assistants: [{ slot_id: 'lead-slot', role: 'lead', conversation_id: 'leader' }],
     } });
-    if (url.pathname === '/api/conversations/leader') return json(200, { success: true, data: {
+    // Real Core keeps direct conversation routes Owner-only, and rejects all
+    // Team-owned sends there. Only Team routes authorize collaborators.
+    if (url.pathname.startsWith('/api/conversations/')) return json(403, { success: false });
+    if (url.pathname === '/api/teams/team/conversations/leader') return json(200, { success: true, data: {
       id: 'leader', name: 'Leader', runtime: { can_send_message: true },
     } });
-    if (url.pathname === '/api/conversations/leader/messages') {
-      if (request.method === 'POST') {
+    if (url.pathname === '/api/teams/team/messages' && request.method === 'POST') {
         let raw = '';
         for await (const chunk of request) raw += chunk;
         const content = JSON.parse(raw).content;
-        items.push({ id: 'm2', type: 'text', content: { content }, position: 'right', created_at: 2 });
+        items.push({ id: 'm2', type: 'text', content: { content, actor_user_id: caller }, position: 'right', created_at: 2 });
         items.push({ id: 'm3', type: 'text', content: { content: 'Updated website' }, position: 'left', created_at: 3 });
         return json(200, { success: true, data: { accepted: true } });
-      }
+    }
+    if (url.pathname === '/api/teams/team/conversations/leader/messages' && request.method === 'GET') {
       return json(200, { success: true, data: { items, oldest_cursor: 'm1', has_more_before: false } });
     }
     return json(404, { success: false });
@@ -65,7 +70,7 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
   const config = {
     previewScanRoot: join(root, 'workspaces'), adminEmails: new Set(['owner@example.com']),
     aionBackendUrl: `http://127.0.0.1:${backend.address().port}`,
-    aionUsers: new Map(['owner@example.com', 'viewer@example.com'].map((username) => [username, { username, password: 'server-only-password' }])),
+    aionUsers: new Map(['owner@example.com', 'collaborator@example.com', 'viewer@example.com'].map((username) => [username, { username, password: 'server-only-password' }])),
   };
   const registry = new PreviewRegistry(join(root, 'registry.json'));
   const entry = await registry.ensure({ relativePath: 'owner/project', slug: 'demo', teamId: 'team', conversationId: 'worker' });
@@ -78,6 +83,7 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
   const path = `${config.publicUrl}/api/previews/${entry.slug}/chat`;
   const headers = { authorization: 'Bearer owner@example.com' };
   const controller = new AbortController();
+  const memberController = new AbortController();
   try {
     assert.equal((await fetch(`${path}/messages`)).status, 401);
     assert.equal((await fetch(`${path}/messages`, { headers: { authorization: 'Bearer viewer@example.com' } })).status, 403);
@@ -90,13 +96,13 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
     const stream = await fetch(`${path}/events`, { headers, signal: controller.signal });
     const reader = stream.body.getReader();
     let buffer = '';
-    async function next() {
+    async function next(expected = 'messages') {
       while (true) {
         const boundary = buffer.indexOf('\n\n');
         if (boundary >= 0) {
           const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
           const data = frame.split('\ndata: ')[1];
-          if (data) return JSON.parse(data);
+          if (data && frame.includes(`event: ${expected}\n`)) return JSON.parse(data);
           continue;
         }
         const result = await reader.read();
@@ -112,11 +118,32 @@ test('bound chat retains Aion ownership, resolves Team Leader, and delivers upda
     assert.equal((await send(config.publicUrl, '')).status, 400);
     assert.equal((await send(config.publicUrl)).status, 202);
     assert.deepEqual((await next()).messages.map((item) => item.text), ['Welcome', 'Make it blue', 'Updated website']);
+    const memberHeaders = { authorization: 'Bearer collaborator@example.com' };
+    assert.equal((await fetch(`${path}/messages`, { headers: memberHeaders })).status, 200);
+    assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Member edit' }) })).status, 202);
+    const memberSnapshot = await (await fetch(`${path}/messages`, { headers: memberHeaders })).json();
+    assert.equal(memberSnapshot.messages.find((item) => item.text === 'Member edit').actorUserId, 'collaborator@example.com');
+    const memberStream = await fetch(`${path}/events`, { headers: memberHeaders, signal: memberController.signal });
+    assert.equal(memberStream.status, 200);
+    const memberReader = memberStream.body.getReader();
+    let memberBuffer = '';
+    async function memberEvent(name) {
+      while (!memberBuffer.includes(`event: ${name}\ndata: `)) {
+        const value = await memberReader.read();
+        assert.equal(value.done, false, `Stream closed before ${name}`);
+        memberBuffer += Buffer.from(value.value).toString();
+      }
+    }
+    await memberEvent('messages');
+    collaboratorActive = false;
+    assert.equal((await fetch(`${path}/messages`, { headers: memberHeaders })).status, 403);
+    assert.equal((await fetch(`${path}/messages`, { method: 'POST', headers: { ...memberHeaders, origin: config.publicUrl, 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Denied edit' }) })).status, 403);
+    await memberEvent('unavailable');
     await registry.setEnabled(entry.slug, false);
-    assert.deepEqual(await next(), {});
+    assert.deepEqual(await next('disabled'), {});
     assert.equal((await fetch(`${path}/messages`, { headers })).status, 404);
   } finally {
-    controller.abort(); server.closeAllConnections(); backend.closeAllConnections();
+    controller.abort(); memberController.abort(); server.closeAllConnections(); backend.closeAllConnections();
     await Promise.all([new Promise((resolve) => server.close(resolve)), new Promise((resolve) => backend.close(resolve))]);
     await rm(root, { recursive: true, force: true });
   }

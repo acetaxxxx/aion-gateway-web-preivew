@@ -1,7 +1,13 @@
+import { locale, t, translatePage } from './i18n.js';
+
+translatePage();
+
 const list = document.querySelector('#preview-list');
 const emptyState = document.querySelector('#empty-state');
 const adminPanel = document.querySelector('#admin-panel');
 const adminStatus = document.querySelector('#admin-status');
+const catalogStatus = document.querySelector('#catalog-status');
+const discoveryStatus = document.querySelector('#discovery-status');
 const select = document.querySelector('#candidate-select');
 const addForm = document.querySelector('#add-preview-form');
 const previewSlug = document.body.dataset.previewSlug;
@@ -14,7 +20,7 @@ async function request(path, options) {
     headers: { ...(options?.headers ?? {}), ...(options?.body ? { 'content-type': 'application/json' } : {}) },
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+  if (!response.ok) throw new Error(body.error ?? t('request.failed', { status: response.status }));
   return body;
 }
 
@@ -27,26 +33,59 @@ function element(tag, className, text) {
 
 async function loadCandidates() {
   const { candidates } = await request('/api/candidates');
-  select.replaceChildren(new Option('選擇工作目錄…', ''));
+  select.replaceChildren(new Option(t('admin.chooseDirectory'), ''));
   for (const candidate of candidates) {
-    select.add(new Option(`${candidate.title} — ${candidate.relativePath}`, candidate.relativePath));
+    const option = new Option(t(candidate.workspaceScope === 'team' ? 'admin.teamCandidate' : 'admin.candidate', {
+      title: candidate.title, path: candidate.relativePath,
+    }), candidate.relativePath);
+    option.dataset.workspaceScope = candidate.workspaceScope ?? 'user';
+    select.add(option);
   }
-  if (candidates.length === 0) select.add(new Option('找不到含 index.html 的目錄', ''));
+  if (candidates.length === 0) select.add(new Option(t('admin.noDirectories'), ''));
 }
 
 function renderPreview(entry, admin) {
   const card = element('article', 'preview-card');
   const details = element('div');
-  details.append(element('h3', '', entry.title));
-  const state = { ready: '可用', waiting: '等待網頁', missing: '目錄不存在', disabled: '已停用' };
-  details.append(element('p', '', `${state[entry.status] ?? entry.status}${entry.teamId ? ` · Team ${entry.teamId}` : ''} · ${new Date(entry.updatedAt).toLocaleString('zh-TW')}`));
-  if (admin) details.append(element('p', '', entry.relativePath));
+  const previewUrl = `/p/${encodeURIComponent(entry.slug)}`;
+  const heading = element('h3');
+  const titleLink = element('a', '', entry.title);
+  titleLink.href = previewUrl;
+  heading.append(titleLink);
+  details.append(heading);
+  const displayPath = entry.displayPath ?? (entry.relativePath
+    ? `${entry.relativePath}/${entry.entryFile || 'index.html'}`
+    : entry.entryFile || 'index.html');
+  const path = element('p', 'preview-path');
+  const pathLink = element('a', '', displayPath);
+  pathLink.href = previewUrl;
+  path.append(pathLink);
+  details.append(path);
+  const state = { ready: 'preview.ready', waiting: 'preview.waiting', missing: 'preview.missing', disabled: 'preview.disabled' };
+  details.append(element('p', '', t(entry.teamId ? 'preview.teamMetadata' : 'preview.metadata', {
+    status: state[entry.status] ? t(state[entry.status]) : entry.status,
+    teamId: entry.teamId, date: new Date(entry.updatedAt).toLocaleString(locale),
+  })));
   const actions = element('div', 'preview-actions');
-  const open = element('a', '', '開啟');
-  open.href = `/p/${encodeURIComponent(entry.slug)}`;
+  const open = element('a', '', t('preview.open'));
+  open.href = previewUrl;
   actions.append(open);
+  if (entry.canRename ?? admin) {
+    const rename = element('button', 'secondary', t('preview.rename'));
+    rename.type = 'button';
+    rename.addEventListener('click', async () => {
+      const title = window.prompt(t('preview.renamePrompt'), entry.title);
+      if (!title?.trim()) return;
+      try {
+        await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'PATCH', body: JSON.stringify({ title: title.trim() }) });
+        await loadPreviews(admin);
+        catalogStatus.textContent = t('catalog.renamed');
+      } catch (error) { catalogStatus.textContent = error.message; }
+    });
+    actions.append(rename);
+  }
   if (admin) {
-    const toggle = element('button', 'secondary', entry.enabled ? '停用' : '啟用');
+    const toggle = element('button', 'secondary', t(entry.enabled ? 'preview.disable' : 'preview.enable'));
     toggle.type = 'button';
     toggle.addEventListener('click', async () => {
       try {
@@ -57,41 +96,32 @@ function renderPreview(entry, admin) {
       } catch (error) { adminStatus.textContent = error.message; }
     });
     actions.append(toggle);
-    const rename = element('button', 'secondary', '改名');
-    rename.type = 'button';
-    rename.addEventListener('click', async () => {
-      const title = window.prompt('新的顯示名稱（網址不變）', entry.title);
-      if (!title?.trim()) return;
-      try {
-        await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'PATCH', body: JSON.stringify({ title }) });
-        await loadPreviews(admin);
-      } catch (error) { adminStatus.textContent = error.message; }
-    });
-    const remove = element('button', 'secondary', '移除');
+    const remove = element('button', 'secondary', t('preview.remove'));
     remove.type = 'button';
     remove.addEventListener('click', async () => {
-      if (!window.confirm('移除此預覽？工作目錄與檔案不會刪除。')) return;
+      if (!window.confirm(t('preview.removeConfirm'))) return;
       try {
         await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'DELETE' });
         await loadPreviews(admin);
       } catch (error) { adminStatus.textContent = error.message; }
     });
-    actions.append(rename, remove);
+    actions.append(remove);
   }
   card.append(details, actions);
   return card;
 }
 
 async function loadPreviews(admin) {
-  const { previews } = await request('/api/previews');
+  const { previews, discovery } = await request('/api/previews');
   catalog = previews;
   catalogAdmin = admin;
+  discoveryStatus.textContent = discovery?.truncated ? t('catalog.truncated') : '';
   renderCatalog();
 }
 
 function renderCatalog() {
   const search = document.querySelector('#preview-search').value.toLowerCase();
-  const entries = catalog.filter((entry) => `${entry.title} ${entry.teamId ?? ''}`.toLowerCase().includes(search));
+  const entries = catalog.filter((entry) => `${entry.title} ${entry.displayPath ?? entry.relativePath ?? ''} ${entry.entryFile ?? ''} ${entry.teamId ?? ''}`.toLowerCase().includes(search));
   list.replaceChildren(...entries.map((entry) => renderPreview(entry, catalogAdmin)));
   emptyState.classList.toggle('hidden', entries.length > 0);
 }
@@ -108,10 +138,11 @@ async function showChat(slug) {
     for (const message of snapshot.messages) history.set(message.id, message);
     messages.replaceChildren(...[...history.values()].sort((a, b) => a.createdAt - b.createdAt).map((message) => {
       const node = element('article', `chat-message ${message.role}`);
-      node.append(element('strong', '', message.role === 'user' ? '你' : 'Aion'), element('div', '', message.text));
+      node.append(element('strong', '', message.role === 'user' ? message.actorUserId ?? t('chat.you') : t('chat.assistant')), element('div', '', message.text));
+      if (message.createdAt) node.append(element('small', '', new Date(message.createdAt).toLocaleString(locale)));
       return node;
     }));
-    status.textContent = `對話：${snapshot.name}（僅可存取你的 Aion 對話）`;
+    status.textContent = t('chat.conversation', { name: snapshot.name });
     send.disabled = snapshot.runtime?.can_send_message === false;
   }
   try {
@@ -135,9 +166,9 @@ async function showChat(slug) {
   const events = new EventSource(`${path}/events`);
   events.addEventListener('messages', (event) => render(JSON.parse(event.data)));
   for (const name of ['disabled', 'unavailable']) events.addEventListener(name, () => {
-    events.close(); send.disabled = true; status.textContent = '對話已無法存取，請重新整理確認登入與預覽狀態。';
+    events.close(); send.disabled = true; status.textContent = t('chat.unavailable');
   });
-  events.onerror = () => { status.textContent = '正在重新連接 Aion 對話…'; };
+  events.onerror = () => { status.textContent = t('chat.reconnecting'); };
   window.addEventListener('pagehide', () => events.close(), { once: true });
   document.querySelector('#chat-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -146,7 +177,7 @@ async function showChat(slug) {
     try {
       await request(`${path}/messages`, { method: 'POST', body: JSON.stringify({ content: input.value }) });
       input.value = '';
-      status.textContent = '已交給 Aion；回覆與網頁修改將自動更新。';
+      status.textContent = t('chat.sent');
     } catch (error) { status.textContent = error.message; send.disabled = false; }
   });
 }
@@ -154,38 +185,56 @@ async function showChat(slug) {
 async function showPreview() {
   const { previews } = await request('/api/previews');
   const entry = previews.find((item) => item.slug === previewSlug);
-  if (!entry) throw new Error('找不到這個預覽，或預覽已停用。');
+  if (!entry) throw new Error(t('preview.notFound'));
   document.querySelector('#page-title').textContent = entry.title;
   document.querySelector('#back-link').classList.remove('hidden');
   document.querySelector('#preview-list-panel').classList.add('hidden');
   document.querySelector('#preview-shell').classList.remove('hidden');
   document.querySelector('#preview-name').textContent = entry.title;
-  const previewUrl = `/preview/${encodeURIComponent(entry.slug)}/index.html`;
+  const entryFile = (entry.entryFile || 'index.html').split('/').map(encodeURIComponent).join('/');
+  const previewUrl = `/preview/${encodeURIComponent(entry.slug)}/${entryFile}`;
   const frame = document.querySelector('#preview-frame');
   const status = document.querySelector('#preview-status');
+  let liveReloadAvailable = true;
+  if (entry.status === 'ready') {
+    frame.src = previewUrl;
+    status.textContent = t('preview.loaded');
+  } else {
+    frame.classList.add('hidden');
+    status.textContent = t('preview.waitingForAgent');
+  }
   const events = new EventSource(`/api/previews/${encodeURIComponent(entry.slug)}/events`);
   function update(event) {
     const state = JSON.parse(event.data);
     if (!state.available) {
       frame.removeAttribute('src');
       frame.classList.add('hidden');
-      status.textContent = '等待 Agent 完成網頁…';
+      status.textContent = t('preview.waitingForAgent');
       return;
     }
     frame.classList.remove('hidden');
-    frame.src = `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
-    status.textContent = '即時預覽已連線，檔案修改後會自動更新。';
+    frame.src = state.revision === undefined ? previewUrl : `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
+    liveReloadAvailable = state.liveReloadAvailable !== false;
+    status.textContent = t(liveReloadAvailable ? 'preview.connected' : 'preview.manualRefresh');
   }
   events.addEventListener('ready', update);
   events.addEventListener('reload', update);
   events.addEventListener('disabled', () => {
     events.close(); frame.removeAttribute('src'); frame.classList.add('hidden');
-    status.textContent = '此預覽已停用。';
+    status.textContent = t('preview.disabledNotice');
   });
-  events.onerror = () => { status.textContent = '正在重新連接即時預覽…'; };
+  events.onerror = () => {
+    status.textContent = t(frame.hasAttribute('src')
+      ? liveReloadAvailable ? 'preview.reconnectingManual' : 'preview.manualRefresh'
+      : 'preview.reconnecting');
+  };
   window.addEventListener('pagehide', () => events.close(), { once: true });
   document.querySelector('#open-preview').href = `/p/${encodeURIComponent(entry.slug)}`;
-  await showChat(entry.slug);
+  const chatBound = entry.chatBound ?? Boolean(entry.conversationId || entry.teamId);
+  if (chatBound) {
+    document.querySelector('#chat-panel').classList.remove('hidden');
+    await showChat(entry.slug);
+  }
 }
 
 async function start() {
@@ -198,7 +247,7 @@ async function start() {
     }
     await loadPreviews(me.admin);
   } catch (error) {
-    document.querySelector('#page-title').textContent = '無法載入 Gateway';
+    document.querySelector('#page-title').textContent = t('page.loadFailed');
     emptyState.classList.remove('hidden');
     emptyState.textContent = error.message;
   }
@@ -206,24 +255,36 @@ async function start() {
 
 addForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  adminStatus.textContent = '正在加入…';
+  adminStatus.textContent = t('admin.adding');
   try {
     await request('/api/previews', {
       method: 'POST',
       body: JSON.stringify({
         relativePath: select.value,
+        workspaceScope: select.selectedOptions[0]?.dataset.workspaceScope ?? 'user',
         title: document.querySelector('#preview-title-input').value,
       }),
     });
     document.querySelector('#preview-title-input').value = '';
-    adminStatus.textContent = '已加入預覽。';
+    adminStatus.textContent = t('admin.added');
     await loadPreviews(true);
   } catch (error) { adminStatus.textContent = error.message; }
 });
 
 document.querySelector('#refresh-candidates').addEventListener('click', async () => {
-  try { await loadCandidates(); adminStatus.textContent = '目錄清單已更新。'; }
+  try { await loadCandidates(); await loadPreviews(catalogAdmin); adminStatus.textContent = t('admin.directoriesUpdated'); }
   catch (error) { adminStatus.textContent = error.message; }
+});
+
+document.querySelector('#refresh-previews').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  catalogStatus.textContent = t('catalog.refreshing');
+  try {
+    await loadPreviews(catalogAdmin);
+    catalogStatus.textContent = t('catalog.refreshed');
+  } catch (error) { catalogStatus.textContent = error.message; }
+  finally { button.disabled = false; }
 });
 
 document.querySelector('#preview-search').addEventListener('input', renderCatalog);

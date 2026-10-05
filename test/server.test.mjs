@@ -18,6 +18,7 @@ before(async () => {
   await mkdir(join(config.previewScanRoot, 'owner', 'project'), { recursive: true });
   await writeFile(join(config.previewScanRoot, 'owner', 'project', 'index.html'), '<script>parent.postMessage("x", "*")</script>');
   await writeFile(join(config.previewScanRoot, 'owner', 'project', 'asset.css'), 'body { color: green }');
+  await writeFile(join(config.previewScanRoot, 'owner', 'project', 'module.js'), 'export const value = "private preview";');
   registry = new PreviewRegistry(join(root, 'gateway', 'previews.json'));
   const auth = async (request) => {
     if (request.headers.authorization === 'Bearer owner') return { email: 'owner@example.com' };
@@ -124,4 +125,40 @@ test('catalog management preserves URLs on rename and files on removal', async (
   assert.equal((await fetch(path, { method: 'DELETE', headers: headers('owner') })).status, 200);
   assert.equal((await fetch(`${origin}/p/${entry.slug}`, { headers: headers('owner') })).status, 404);
   assert.match(await readFile(join(config.previewScanRoot, 'owner', 'project', 'index.html'), 'utf8'), /parent.postMessage/);
+});
+
+test('authenticated viewers can rename only the catalog label when shared rename is enabled', async (t) => {
+  config.catalogRenameAllowed = true;
+  t.after(() => { config.catalogRenameAllowed = false; });
+  const entry = await registry.add({ relativePath: 'rename/project', title: 'Stable label' });
+  const path = `${origin}/api/previews/${entry.slug}`;
+  const renamed = await fetch(path, {
+    method: 'PATCH', headers: { ...headers('viewer'), 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Friendly Team screen' }),
+  });
+  assert.equal(renamed.status, 200);
+  const value = (await renamed.json()).preview;
+  assert.equal(value.title, 'Friendly Team screen');
+  assert.equal(value.slug, entry.slug);
+  const forbidden = await fetch(path, {
+    method: 'PATCH', headers: { ...headers('viewer'), 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Changed label', enabled: false }),
+  });
+  assert.equal(forbidden.status, 403);
+});
+
+test('opaque external frames cannot read authenticated preview or portal resources via null-origin CORS', async () => {
+  const entry = await registry.add({ relativePath: 'owner/project', title: 'CORS boundary' });
+  const forged = {
+    ...headers('viewer'), origin: 'null', 'sec-fetch-dest': 'script',
+    // A plausible Gateway Referer is not an authorization capability.
+    referer: `${origin}/preview/${entry.slug}/index.html`,
+  };
+  for (const path of [`/preview/${entry.slug}/module.js`, '/api/me', '/app.js']) {
+    const response = await fetch(`${origin}${path}`, { headers: forged });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-origin'), null);
+    assert.equal(response.headers.get('access-control-allow-credentials'), null);
+  }
+  assert.equal((await fetch(`${origin}/preview/${entry.slug}/module.js`, { headers: { origin: 'null' } })).status, 401);
 });

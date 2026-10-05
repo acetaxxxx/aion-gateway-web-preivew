@@ -26,6 +26,9 @@ export function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? 3000),
     previewScanRoot: required('PREVIEW_SCAN_ROOT', env.PREVIEW_SCAN_ROOT),
+    dataPreviewScanRoot: env.PREVIEW_DATA_SCAN_ROOT?.trim() || undefined,
+    dataAgentWorkspaceRoot: env.AION_DATA_WORKSPACE_ROOT?.trim() || undefined,
+    catalogRenameAllowed: env.GATEWAY_CATALOG_RENAME_ALLOWED === 'true',
     dataDir: required('GATEWAY_DATA_DIR', env.GATEWAY_DATA_DIR),
     accessTeamDomain: teamDomain,
     accessAudience: required('CF_ACCESS_AUDIENCE', env.CF_ACCESS_AUDIENCE),
@@ -33,6 +36,8 @@ export function loadConfig(env = process.env) {
     mcpToken,
     publicUrl,
     agentWorkspaceRoot: env.AION_WORKSPACE_ROOT ?? '/data/conversations/users',
+    teamPreviewScanRoot: env.PREVIEW_TEAM_SCAN_ROOT?.trim() || undefined,
+    teamAgentWorkspaceRoot: env.AION_TEAM_WORKSPACE_ROOT ?? '/data/teams',
     aionBackendUrl: env.AION_BACKEND_URL ?? 'http://aion-app:8080',
     aionUsers: new Map((env.AION_BACKEND_USERS ?? '').split(',').map((entry) => entry.trim()).filter(Boolean).map((entry) => {
       const colon = entry.indexOf(':');

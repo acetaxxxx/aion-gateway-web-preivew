@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authenticateRequest } from './access.mjs';
-import { discoverCandidates, resolvePreviewDirectory, resolvePreviewFile, verifyPreviewFile } from './filesystem.mjs';
+import { discoverCandidates, resolveRegisteredPreview, verifyPreviewFile, verifyRegisteredFile } from './filesystem.mjs';
 import { Previews } from './previews.mjs';
 import { PreviewChanges } from './changes.mjs';
 import { authenticateMcp, handleMcp } from './mcp.mjs';
@@ -15,6 +15,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 const MIME_TYPES = new Map([
   ['.avif', 'image/avif'], ['.css', 'text/css; charset=utf-8'], ['.gif', 'image/gif'],
   ['.html', 'text/html; charset=utf-8'], ['.ico', 'image/x-icon'], ['.jpeg', 'image/jpeg'],
+  ['.htm', 'text/html; charset=utf-8'], ['.mjs', 'text/javascript; charset=utf-8'], ['.ttf', 'font/ttf'],
   ['.jpg', 'image/jpeg'], ['.js', 'text/javascript; charset=utf-8'], ['.json', 'application/json; charset=utf-8'],
   ['.map', 'application/json; charset=utf-8'], ['.mp3', 'audio/mpeg'], ['.mp4', 'video/mp4'],
   ['.otf', 'font/otf'], ['.pdf', 'application/pdf'], ['.png', 'image/png'], ['.svg', 'image/svg+xml'],
@@ -46,9 +47,9 @@ async function safePreview(entry, admin, config) {
   let updatedAt = entry.updatedAt ?? entry.createdAt;
   if (entry.enabled) {
     try {
-      const preview = await resolvePreviewDirectory(config.previewScanRoot, entry.relativePath, { requireEntry: false });
+      const preview = await resolveRegisteredPreview(config, entry, { requireEntry: false });
       status = 'waiting';
-      const index = await verifyPreviewFile(preview.directory, resolve(preview.directory, 'index.html')).catch(() => null);
+      const index = await verifyPreviewFile(preview.directory, resolve(preview.directory, preview.entryFile)).catch(() => null);
       if (index) {
         status = 'ready';
         const modified = (await stat(index)).mtime.toISOString();
@@ -56,9 +57,14 @@ async function safePreview(entry, admin, config) {
       }
     } catch { /* Keep missing state without exposing filesystem errors. */ }
   }
-  const value = { slug: entry.slug, title: entry.title, enabled: entry.enabled, status, createdAt: entry.createdAt, updatedAt };
+  const entryFile = entry.entryFile ?? 'index.html';
+  const displayPath = entry.relativePath === '.' ? entryFile : `${entry.relativePath}/${entryFile}`;
+  const value = { slug: entry.slug, title: entry.title, enabled: entry.enabled, status, createdAt: entry.createdAt, updatedAt,
+    entryFile, url: `${config.publicUrl ?? ''}/p/${entry.slug}`,
+    canRename: Boolean(admin || config.catalogRenameAllowed), chatBound: Boolean(entry.conversationId || (entry.teamId && !entry.autoDiscovered)) };
+  if (admin || config.dataPreviewScanRoot) value.displayPath = displayPath;
   if (entry.teamId) value.teamId = entry.teamId;
-  if (admin) value.relativePath = entry.relativePath;
+  if (admin) { value.relativePath = entry.relativePath; value.workspaceScope = entry.workspaceScope ?? 'user'; }
   return value;
 }
 
@@ -152,7 +158,7 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
         return response.end(await adminPage());
       }
 
-      if (['/app.js', '/app.css'].includes(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
+      if (['/app.js', '/i18n.js', '/app.css'].includes(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
         return await streamFile(request, response, resolve(PUBLIC_DIR, url.pathname.slice(1)));
       }
 
@@ -172,17 +178,30 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        return sendJson(response, 200, { email: identity.email, admin });
+        return sendJson(response, 200, { email: identity.email, admin, canRename: Boolean(admin || config.catalogRenameAllowed) });
       }
 
       if (url.pathname === '/api/previews' && request.method === 'GET') {
+        const discovery = await previews.discover();
         const entries = (await registry.list()).filter((entry) => admin || entry.enabled);
-        return sendJson(response, 200, { previews: await Promise.all(entries.map((entry) => safePreview(entry, admin, config))) });
+        return sendJson(response, 200, { previews: await Promise.all(entries.map((entry) => safePreview(entry, admin, config))), discovery });
+      }
+
+      if (url.pathname === '/api/discovery' && request.method === 'POST') {
+        return sendJson(response, 200, { discovery: await previews.discover() });
       }
 
       if (url.pathname === '/api/candidates' && request.method === 'GET') {
         if (!admin) return sendJson(response, 403, { error: 'Administrator access required' });
-        return sendJson(response, 200, { candidates: await discoverCandidates(config.previewScanRoot) });
+        const candidates = (await discoverCandidates(config.previewScanRoot)).map((entry) => ({ ...entry, workspaceScope: 'user' }));
+        if (config.teamPreviewScanRoot) {
+          const teams = await discoverCandidates(config.teamPreviewScanRoot).catch((error) => {
+            if (error.code === 'ENOENT') return [];
+            throw error;
+          });
+          candidates.push(...teams.map((entry) => ({ ...entry, workspaceScope: 'team' })));
+        }
+        return sendJson(response, 200, { candidates });
       }
 
       if (url.pathname === '/api/previews' && request.method === 'POST') {
@@ -219,8 +238,14 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
 
       const toggleMatch = url.pathname.match(/^\/api\/previews\/([a-z0-9-]+)$/);
       if (toggleMatch && request.method === 'PATCH') {
-        if (!admin) return sendJson(response, 403, { error: 'Administrator access required' });
+        if (!admin && !config.catalogRenameAllowed) return sendJson(response, 403, { error: 'Administrator access required' });
         const body = await readJson(request);
+        if (!admin && (Object.keys(body).some((key) => key !== 'title') || body.title === undefined)) {
+          return sendJson(response, 403, { error: 'Only display title changes are allowed' });
+        }
+        if (!admin && !(await registry.list()).some((entry) => entry.slug === toggleMatch[1] && entry.enabled)) {
+          return sendJson(response, 404, { error: 'Preview not found' });
+        }
         if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
           return sendJson(response, 400, { error: 'enabled must be a boolean' });
         }
@@ -230,7 +255,7 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
         if (body.enabled === undefined && body.title === undefined) return sendJson(response, 400, { error: 'A title or enabled value is required' });
         const entry = await registry.update(toggleMatch[1], { title: body.title, enabled: body.enabled });
         return entry
-          ? sendJson(response, 200, { preview: await safePreview(entry, true, config) })
+          ? sendJson(response, 200, { preview: await safePreview(entry, admin, config) })
           : sendJson(response, 404, { error: 'Preview not found' });
       }
 
@@ -286,10 +311,8 @@ export function createGatewayServer({ config, registry, backend = new AionBacken
         const entries = await registry.list();
         const entry = entries.find((item) => item.slug === fileMatch[1] && item.enabled);
         if (!entry) return sendJson(response, 404, { error: 'Preview not found' });
-        const preview = await resolvePreviewDirectory(config.previewScanRoot, entry.relativePath);
         const requestedPath = fileMatch[2] ?? '';
-        const filePath = resolvePreviewFile(preview.directory, requestedPath);
-        const verifiedPath = await verifyPreviewFile(preview.directory, filePath);
+        const verifiedPath = await verifyRegisteredFile(config, entry, requestedPath);
         const extension = extname(verifiedPath).toLowerCase();
         const destination = request.headers['sec-fetch-dest'];
         if ((['.html', '.htm'].includes(extension) && destination !== 'iframe')

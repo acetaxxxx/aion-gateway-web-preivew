@@ -73,22 +73,31 @@ export class AionBackend {
 
   async messages(email, entry, before) {
     const id = await this.conversationId(email, entry);
-    const conversation = await this.#request(email, `/api/conversations/${encodeURIComponent(id)}`);
+    const base = entry.teamId
+      ? `/api/teams/${encodeURIComponent(entry.teamId)}/conversations/${encodeURIComponent(id)}`
+      : `/api/conversations/${encodeURIComponent(id)}`;
+    const conversation = await this.#request(email, base);
     const query = new URLSearchParams({ limit: '50' });
     if (before) query.set('before', before);
-    const page = await this.#request(email, `/api/conversations/${encodeURIComponent(id)}/messages?${query}`);
+    const page = await this.#request(email, `${base}/messages?${query}`);
     return {
       conversationId: id, name: conversation.name, runtime: conversation.runtime,
       messages: (page.items ?? []).filter((item) => item.type === 'text' && !item.hidden).map((item) => ({
         id: item.id, role: item.position === 'right' ? 'user' : 'assistant',
         text: typeof item.content === 'string' ? item.content : item.content?.content ?? '',
         status: item.status, createdAt: item.created_at,
+        ...(typeof item.content?.actor_user_id === 'string' ? { actorUserId: item.content.actor_user_id } : {}),
       })),
       oldestCursor: page.oldest_cursor, hasMore: page.has_more_before,
     };
   }
 
   async send(email, entry, content) {
+    if (entry.teamId) {
+      return this.#request(email, `/api/teams/${encodeURIComponent(entry.teamId)}/messages`, {
+        method: 'POST', body: { content },
+      });
+    }
     const id = await this.conversationId(email, entry);
     return this.#request(email, `/api/conversations/${encodeURIComponent(id)}/messages`, {
       method: 'POST', body: { content },
