@@ -17,7 +17,9 @@ test('authenticated catalog automatically discovers and serves standalone HTML a
   };
   await mkdir(config.previewScanRoot, { recursive: true });
   await mkdir(join(config.dataPreviewScanRoot, 'reports'), { recursive: true });
+  await mkdir(join(config.dataPreviewScanRoot, 'credentials'), { recursive: true });
   await writeFile(join(config.dataPreviewScanRoot, 'reports', 'quarter.htm'), '<h1>Quarter report</h1>');
+  await writeFile(join(config.dataPreviewScanRoot, 'credentials', 'index.html'), '<h1>Private</h1>');
   const registry = new PreviewRegistry(join(root, 'gateway', 'previews.json'));
   const server = createGatewayServer({ config, registry, authenticate: async () => ({ email: 'viewer@example.com' }) });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -26,7 +28,7 @@ test('authenticated catalog automatically discovers and serves standalone HTML a
     const response = await fetch(`${origin}/api/previews`);
     assert.equal(response.status, 200);
     const catalog = await response.json();
-    assert.equal(catalog.previews.length, 1, 'standalone HTML is enrolled without manual registration');
+    assert.equal(catalog.previews.length, 1, 'standalone HTML is enrolled without manual registration and sensitive folders are excluded');
     const [preview] = catalog.previews;
     assert.equal(preview.entryFile, 'quarter.htm');
     assert.equal(preview.displayPath, 'reports/quarter.htm');
@@ -37,9 +39,18 @@ test('authenticated catalog automatically discovers and serves standalone HTML a
     const page = await fetch(`${origin}/preview/${preview.slug}/${preview.entryFile}`, { headers: { 'sec-fetch-dest': 'iframe' } });
     assert.equal(page.status, 200);
     assert.equal(await page.text(), '<h1>Quarter report</h1>');
+    const renamed = await fetch(`${origin}/api/previews/${preview.slug}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Quarterly numbers' }),
+    });
+    assert.equal(renamed.status, 200);
+    const renamedPreview = (await renamed.json()).preview;
+    assert.equal(renamedPreview.title, 'Quarterly numbers');
+    assert.equal(renamedPreview.slug, preview.slug);
     const next = await (await fetch(`${origin}/api/previews`)).json();
     assert.equal(next.previews.length, 1);
     assert.equal(next.previews[0].url, preview.url);
+    assert.equal(next.previews[0].title, 'Quarterly numbers');
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

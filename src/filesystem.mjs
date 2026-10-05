@@ -100,7 +100,12 @@ export async function resolveRegisteredPreview(config, entry, options) {
 export async function verifyRegisteredFile(config, entry, requestedPath) {
   const preview = await resolveRegisteredPreview(config, entry);
   const filePath = resolvePreviewFile(preview.directory, requestedPath || preview.entryFile);
-  if (entry.workspaceScope === 'data') await rejectSymlinkHops(preview.root, filePath);
+  if (entry.workspaceScope === 'data') {
+    if (!allowedSegments(relative(preview.directory, filePath).split(sep).join('/'))) {
+      throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
+    }
+    await rejectSymlinkHops(preview.root, filePath);
+  }
   const target = await verifyPreviewFile(preview.directory, filePath);
   if (entry.workspaceScope === 'data') {
     if (!DATA_ASSETS.has(extname(target).toLowerCase())) throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
@@ -194,7 +199,6 @@ export function resolvePreviewFile(previewDirectory, requestedPath) {
     throw Object.assign(new Error('Invalid preview file path'), { statusCode: 400 });
   }
   const safeSegments = segments.length ? segments : ['index.html'];
-  if (!allowedSegments(safeSegments.join('/'))) throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
   const filePath = resolve(previewDirectory, ...safeSegments);
   if (!isWithin(previewDirectory, filePath)) {
     throw Object.assign(new Error('Preview file is outside its directory'), { statusCode: 400 });
@@ -208,7 +212,6 @@ export async function verifyPreviewFile(previewDirectory, filePath) {
   if (!target || !isWithin(root, target)) {
     throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
   }
-  if (!allowedSegments(relative(root, target).split(sep).join('/'))) throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
   const info = await stat(target);
   if (!info.isFile()) throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
   return target;

@@ -6,6 +6,8 @@ const list = document.querySelector('#preview-list');
 const emptyState = document.querySelector('#empty-state');
 const adminPanel = document.querySelector('#admin-panel');
 const adminStatus = document.querySelector('#admin-status');
+const catalogStatus = document.querySelector('#catalog-status');
+const discoveryStatus = document.querySelector('#discovery-status');
 const select = document.querySelector('#candidate-select');
 const addForm = document.querySelector('#add-preview-form');
 const previewSlug = document.body.dataset.previewSlug;
@@ -45,17 +47,43 @@ async function loadCandidates() {
 function renderPreview(entry, admin) {
   const card = element('article', 'preview-card');
   const details = element('div');
-  details.append(element('h3', '', entry.title));
+  const previewUrl = `/p/${encodeURIComponent(entry.slug)}`;
+  const heading = element('h3');
+  const titleLink = element('a', '', entry.title);
+  titleLink.href = previewUrl;
+  heading.append(titleLink);
+  details.append(heading);
+  const displayPath = entry.displayPath ?? (entry.relativePath
+    ? `${entry.relativePath}/${entry.entryFile || 'index.html'}`
+    : entry.entryFile || 'index.html');
+  const path = element('p', 'preview-path');
+  const pathLink = element('a', '', displayPath);
+  pathLink.href = previewUrl;
+  path.append(pathLink);
+  details.append(path);
   const state = { ready: 'preview.ready', waiting: 'preview.waiting', missing: 'preview.missing', disabled: 'preview.disabled' };
   details.append(element('p', '', t(entry.teamId ? 'preview.teamMetadata' : 'preview.metadata', {
     status: state[entry.status] ? t(state[entry.status]) : entry.status,
     teamId: entry.teamId, date: new Date(entry.updatedAt).toLocaleString(locale),
   })));
-  if (admin) details.append(element('p', '', entry.relativePath));
   const actions = element('div', 'preview-actions');
   const open = element('a', '', t('preview.open'));
-  open.href = `/p/${encodeURIComponent(entry.slug)}`;
+  open.href = previewUrl;
   actions.append(open);
+  if (entry.canRename ?? admin) {
+    const rename = element('button', 'secondary', t('preview.rename'));
+    rename.type = 'button';
+    rename.addEventListener('click', async () => {
+      const title = window.prompt(t('preview.renamePrompt'), entry.title);
+      if (!title?.trim()) return;
+      try {
+        await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'PATCH', body: JSON.stringify({ title: title.trim() }) });
+        await loadPreviews(admin);
+        catalogStatus.textContent = t('catalog.renamed');
+      } catch (error) { catalogStatus.textContent = error.message; }
+    });
+    actions.append(rename);
+  }
   if (admin) {
     const toggle = element('button', 'secondary', t(entry.enabled ? 'preview.disable' : 'preview.enable'));
     toggle.type = 'button';
@@ -68,16 +96,6 @@ function renderPreview(entry, admin) {
       } catch (error) { adminStatus.textContent = error.message; }
     });
     actions.append(toggle);
-    const rename = element('button', 'secondary', t('preview.rename'));
-    rename.type = 'button';
-    rename.addEventListener('click', async () => {
-      const title = window.prompt(t('preview.renamePrompt'), entry.title);
-      if (!title?.trim()) return;
-      try {
-        await request(`/api/previews/${encodeURIComponent(entry.slug)}`, { method: 'PATCH', body: JSON.stringify({ title }) });
-        await loadPreviews(admin);
-      } catch (error) { adminStatus.textContent = error.message; }
-    });
     const remove = element('button', 'secondary', t('preview.remove'));
     remove.type = 'button';
     remove.addEventListener('click', async () => {
@@ -87,22 +105,23 @@ function renderPreview(entry, admin) {
         await loadPreviews(admin);
       } catch (error) { adminStatus.textContent = error.message; }
     });
-    actions.append(rename, remove);
+    actions.append(remove);
   }
   card.append(details, actions);
   return card;
 }
 
 async function loadPreviews(admin) {
-  const { previews } = await request('/api/previews');
+  const { previews, discovery } = await request('/api/previews');
   catalog = previews;
   catalogAdmin = admin;
+  discoveryStatus.textContent = discovery?.truncated ? t('catalog.truncated') : '';
   renderCatalog();
 }
 
 function renderCatalog() {
   const search = document.querySelector('#preview-search').value.toLowerCase();
-  const entries = catalog.filter((entry) => `${entry.title} ${entry.teamId ?? ''}`.toLowerCase().includes(search));
+  const entries = catalog.filter((entry) => `${entry.title} ${entry.displayPath ?? entry.relativePath ?? ''} ${entry.entryFile ?? ''} ${entry.teamId ?? ''}`.toLowerCase().includes(search));
   list.replaceChildren(...entries.map((entry) => renderPreview(entry, catalogAdmin)));
   emptyState.classList.toggle('hidden', entries.length > 0);
 }
@@ -172,9 +191,18 @@ async function showPreview() {
   document.querySelector('#preview-list-panel').classList.add('hidden');
   document.querySelector('#preview-shell').classList.remove('hidden');
   document.querySelector('#preview-name').textContent = entry.title;
-  const previewUrl = `/preview/${encodeURIComponent(entry.slug)}/index.html`;
+  const entryFile = (entry.entryFile || 'index.html').split('/').map(encodeURIComponent).join('/');
+  const previewUrl = `/preview/${encodeURIComponent(entry.slug)}/${entryFile}`;
   const frame = document.querySelector('#preview-frame');
   const status = document.querySelector('#preview-status');
+  let liveReloadAvailable = true;
+  if (entry.status === 'ready') {
+    frame.src = previewUrl;
+    status.textContent = t('preview.loaded');
+  } else {
+    frame.classList.add('hidden');
+    status.textContent = t('preview.waitingForAgent');
+  }
   const events = new EventSource(`/api/previews/${encodeURIComponent(entry.slug)}/events`);
   function update(event) {
     const state = JSON.parse(event.data);
@@ -185,8 +213,9 @@ async function showPreview() {
       return;
     }
     frame.classList.remove('hidden');
-    frame.src = `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
-    status.textContent = t('preview.connected');
+    frame.src = state.revision === undefined ? previewUrl : `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
+    liveReloadAvailable = state.liveReloadAvailable !== false;
+    status.textContent = t(liveReloadAvailable ? 'preview.connected' : 'preview.manualRefresh');
   }
   events.addEventListener('ready', update);
   events.addEventListener('reload', update);
@@ -194,10 +223,18 @@ async function showPreview() {
     events.close(); frame.removeAttribute('src'); frame.classList.add('hidden');
     status.textContent = t('preview.disabledNotice');
   });
-  events.onerror = () => { status.textContent = t('preview.reconnecting'); };
+  events.onerror = () => {
+    status.textContent = t(frame.hasAttribute('src')
+      ? liveReloadAvailable ? 'preview.reconnectingManual' : 'preview.manualRefresh'
+      : 'preview.reconnecting');
+  };
   window.addEventListener('pagehide', () => events.close(), { once: true });
   document.querySelector('#open-preview').href = `/p/${encodeURIComponent(entry.slug)}`;
-  await showChat(entry.slug);
+  const chatBound = entry.chatBound ?? Boolean(entry.conversationId || entry.teamId);
+  if (chatBound) {
+    document.querySelector('#chat-panel').classList.remove('hidden');
+    await showChat(entry.slug);
+  }
 }
 
 async function start() {
@@ -235,8 +272,19 @@ addForm.addEventListener('submit', async (event) => {
 });
 
 document.querySelector('#refresh-candidates').addEventListener('click', async () => {
-  try { await loadCandidates(); adminStatus.textContent = t('admin.directoriesUpdated'); }
+  try { await loadCandidates(); await loadPreviews(catalogAdmin); adminStatus.textContent = t('admin.directoriesUpdated'); }
   catch (error) { adminStatus.textContent = error.message; }
+});
+
+document.querySelector('#refresh-previews').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  catalogStatus.textContent = t('catalog.refreshing');
+  try {
+    await loadPreviews(catalogAdmin);
+    catalogStatus.textContent = t('catalog.refreshed');
+  } catch (error) { catalogStatus.textContent = error.message; }
+  finally { button.disabled = false; }
 });
 
 document.querySelector('#preview-search').addEventListener('input', renderCatalog);

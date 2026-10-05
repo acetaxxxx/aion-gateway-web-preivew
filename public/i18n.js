@@ -23,6 +23,9 @@ const translations = {
   'admin.directoriesUpdated': '目錄清單已更新。',
   'preview.openNewTab': '在新分頁開啟',
   'preview.connecting': '正在連接即時預覽…',
+  'preview.loaded': '預覽已載入；可重新整理查看最新內容。',
+  'preview.manualRefresh': '預覽可用；即時更新暫不可用，請手動重新整理查看最新內容。',
+  'preview.reconnectingManual': '正在重新連接即時預覽；可手動重新整理查看最新內容。',
   'preview.frameTitle': '工作區預覽',
   'preview.ready': '可用',
   'preview.waiting': '等待網頁',
@@ -57,7 +60,12 @@ const translations = {
   'catalog.enabled': '已啟用',
   'catalog.heading': '可用預覽',
   'catalog.searchLabel': '搜尋預覽',
-  'catalog.searchPlaceholder': '名稱或 Team',
+  'catalog.searchPlaceholder': '名稱、路徑或 Team',
+  'catalog.refresh': '重新整理',
+  'catalog.refreshing': '正在掃描 HTML 並更新預覽…',
+  'catalog.refreshed': '預覽清單已更新。',
+  'catalog.renamed': '顯示名稱已更新；網址與檔案不變。',
+  'catalog.truncated': '掃描已達上限，部分 HTML 尚未列出。',
   'catalog.empty': '目前沒有已啟用的預覽。',
 };
 

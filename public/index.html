@@ -45,7 +45,7 @@
         </div>
         <p class="status" id="preview-status" role="status" data-i18n="preview.connecting">正在連接即時預覽…</p>
         <iframe id="preview-frame" title="工作區預覽" data-i18n-title="preview.frameTitle" sandbox="allow-scripts"></iframe>
-        <section class="chat-panel" aria-labelledby="chat-heading">
+        <section class="chat-panel hidden" id="chat-panel" aria-labelledby="chat-heading">
           <h2 id="chat-heading" data-i18n="chat.heading">與 Aion 繼續協作</h2>
           <p class="status" id="chat-status" role="status" data-i18n="chat.loading">正在載入綁定對話…</p>
           <button class="secondary hidden" id="chat-older" type="button" data-i18n="chat.older">載入較早訊息</button>
@@ -64,9 +64,12 @@
             <p class="eyebrow" data-i18n="catalog.enabled">已啟用</p>
             <h2 data-i18n="catalog.heading">可用預覽</h2>
           </div>
+          <button class="secondary" id="refresh-previews" type="button" data-i18n="catalog.refresh">重新整理</button>
         </div>
+        <p class="status" id="catalog-status" role="status"></p>
+        <p class="status" id="discovery-status" role="status"></p>
         <label for="preview-search" data-i18n="catalog.searchLabel">搜尋預覽</label>
-        <input id="preview-search" type="search" placeholder="名稱或 Team" data-i18n-placeholder="catalog.searchPlaceholder" />
+        <input id="preview-search" type="search" placeholder="名稱、路徑或 Team" data-i18n-placeholder="catalog.searchPlaceholder" />
         <div class="preview-list" id="preview-list" aria-live="polite"></div>
         <p class="empty-state hidden" id="empty-state" data-i18n="catalog.empty">目前沒有已啟用的預覽。</p>
       </section>

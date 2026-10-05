@@ -86,7 +86,20 @@ export class PreviewRegistry {
   async ensure({ relativePath, slug, title, teamId, conversationId, workspaceScope = 'user', entryFile = 'index.html' }) {
     return this.#mutate(async (entries) => {
       const named = slug && entries.find((entry) => entry.slug === slug);
-      if (named?.removed) throw Object.assign(new Error('This preview was removed from the catalog'), { statusCode: 409 });
+      if (named?.removed) {
+        if (named.relativePath !== relativePath || (named.entryFile ?? 'index.html') !== entryFile
+          || (named.workspaceScope ?? 'user') !== workspaceScope) {
+          throw Object.assign(new Error('This slug belongs to a different preview'), { statusCode: 409 });
+        }
+        // An explicit Agent create can republish its removed entry with the
+        // same URL. Automatic scans continue treating removed files as tombstones.
+        delete named.removed;
+        named.enabled = true;
+        if (conversationId && !named.conversationId) named.conversationId = conversationId;
+        if (teamId && !named.teamId) named.teamId = teamId;
+        named.updatedAt = new Date().toISOString();
+        return named;
+      }
       if (named && (named.relativePath !== relativePath || (named.entryFile ?? 'index.html') !== entryFile || (named.workspaceScope ?? 'user') !== workspaceScope)) {
         throw Object.assign(new Error('This slug belongs to a different preview'), { statusCode: 409 });
       }

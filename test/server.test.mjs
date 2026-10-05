@@ -127,6 +127,24 @@ test('catalog management preserves URLs on rename and files on removal', async (
   assert.match(await readFile(join(config.previewScanRoot, 'owner', 'project', 'index.html'), 'utf8'), /parent.postMessage/);
 });
 
+test('authenticated viewers can rename only the catalog label when shared rename is enabled', async () => {
+  const entry = await registry.add({ relativePath: 'owner/project', title: 'Stable label' });
+  const path = `${origin}/api/previews/${entry.slug}`;
+  const renamed = await fetch(path, {
+    method: 'PATCH', headers: { ...headers('viewer'), 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Friendly Team screen' }),
+  });
+  assert.equal(renamed.status, 200);
+  const value = (await renamed.json()).preview;
+  assert.equal(value.title, 'Friendly Team screen');
+  assert.equal(value.slug, entry.slug);
+  const forbidden = await fetch(path, {
+    method: 'PATCH', headers: { ...headers('viewer'), 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Changed label', enabled: false }),
+  });
+  assert.equal(forbidden.status, 403);
+});
+
 test('opaque external frames cannot read authenticated preview or portal resources via null-origin CORS', async () => {
   const entry = await registry.add({ relativePath: 'owner/project', title: 'CORS boundary' });
   const forged = {
