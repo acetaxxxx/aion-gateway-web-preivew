@@ -13,6 +13,7 @@ const addForm = document.querySelector('#add-preview-form');
 const previewSlug = document.body.dataset.previewSlug;
 let catalog = [];
 let catalogAdmin = false;
+let activePreviewUrl = '';
 
 async function request(path, options) {
   const response = await fetch(path, {
@@ -187,12 +188,13 @@ async function showPreview() {
   const entry = previews.find((item) => item.slug === previewSlug);
   if (!entry) throw new Error(t('preview.notFound'));
   document.querySelector('#page-title').textContent = entry.title;
-  document.querySelector('#back-link').classList.remove('hidden');
+  document.title = `${entry.title} · Aion Workspace`;
   document.querySelector('#preview-list-panel').classList.add('hidden');
   document.querySelector('#preview-shell').classList.remove('hidden');
   document.querySelector('#preview-name').textContent = entry.title;
   const entryFile = (entry.entryFile || 'index.html').split('/').map(encodeURIComponent).join('/');
   const previewUrl = `/preview/${encodeURIComponent(entry.slug)}/${entryFile}`;
+  activePreviewUrl = previewUrl;
   const frame = document.querySelector('#preview-frame');
   const status = document.querySelector('#preview-status');
   let liveReloadAvailable = true;
@@ -229,10 +231,9 @@ async function showPreview() {
       : 'preview.reconnecting');
   };
   window.addEventListener('pagehide', () => events.close(), { once: true });
-  document.querySelector('#open-preview').href = `/p/${encodeURIComponent(entry.slug)}`;
   const chatBound = entry.chatBound ?? Boolean(entry.conversationId || entry.teamId);
   if (chatBound) {
-    document.querySelector('#chat-panel').classList.remove('hidden');
+    document.querySelector('#chat-toggle').classList.remove('hidden');
     await showChat(entry.slug);
   }
 }
@@ -240,7 +241,10 @@ async function showPreview() {
 async function start() {
   try {
     const me = await request('/api/me');
-    if (previewSlug) return await showPreview();
+    if (previewSlug) {
+      document.body.classList.add('preview-mode');
+      return await showPreview();
+    }
     if (me.admin) {
       adminPanel.classList.remove('hidden');
       await loadCandidates();
@@ -252,6 +256,23 @@ async function start() {
     emptyState.textContent = error.message;
   }
 }
+
+document.querySelector('#preview-reload').addEventListener('click', () => {
+  const frame = document.querySelector('#preview-frame');
+  if (!activePreviewUrl || frame.classList.contains('hidden')) return;
+  frame.src = `${activePreviewUrl}?v=${Date.now()}`;
+});
+
+const chatPanel = document.querySelector('#chat-panel');
+const chatToggle = document.querySelector('#chat-toggle');
+chatToggle.addEventListener('click', () => {
+  const expanded = chatPanel.classList.toggle('hidden') === false;
+  chatToggle.setAttribute('aria-expanded', String(expanded));
+});
+document.querySelector('#chat-close').addEventListener('click', () => {
+  chatPanel.classList.add('hidden');
+  chatToggle.setAttribute('aria-expanded', 'false');
+});
 
 addForm.addEventListener('submit', async (event) => {
   event.preventDefault();
