@@ -50,7 +50,7 @@ test('homepage discovers Shared Team HTML, viewer renames its label, stable link
     await expect(teamCard).toHaveCount(1);
     await expect(teamCard.getByRole('button', { name: '改名' })).toBeVisible();
     await expect(teamCard.getByRole('button', { name: '停用' })).toHaveCount(0);
-    const teamLink = teamCard.getByRole('link', { name: 'team-1', exact: true });
+    const teamLink = teamCard.getByRole('link', { name: 'project', exact: true });
     const stableUrl = await teamLink.getAttribute('href');
     await expect(teamLink).toHaveAttribute('href', /^\/p\/[a-z0-9-]+$/);
 
