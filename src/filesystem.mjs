@@ -5,7 +5,7 @@ const MAX_CANDIDATES = 500;
 const MAX_VISITED_DIRECTORIES = 20_000;
 const MAX_DEPTH = 12;
 const EXCLUDED = new Set(['node_modules', 'vendor', 'bower_components', '__pycache__', 'secrets', 'credentials']);
-const DATA_ASSETS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.avif', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp', '.woff', '.woff2', '.otf', '.ttf', '.mp3', '.mp4', '.webm', '.wasm', '.pdf']);
+const DATA_ASSETS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json', '.txt', '.avif', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp', '.woff', '.woff2', '.otf', '.ttf', '.mp3', '.mp4', '.webm', '.wasm', '.pdf']);
 
 function allowedSegments(path) {
   return path.split('/').every((part) => !part.startsWith('.') && !EXCLUDED.has(part.toLowerCase())

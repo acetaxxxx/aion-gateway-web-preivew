@@ -24,6 +24,9 @@ MCP enrollment or manual registration. Existing chat and MCP previews remain.
   own entries; homepage labels link directly to the appropriate entry page.
   Non-HTML files are not catalog items. Dependency/hidden paths and symlinks are
   excluded, traversal is bounded, and truncation is reported explicitly.
+- Automatically discovered previews may load relative JSON and text assets in
+  addition to HTML, scripts, styles, and media. Hidden, credential-like, and
+  token/password-named paths remain blocked; do not store secrets beside a page.
 - `GATEWAY_CATALOG_RENAME_ALLOWED=true` permits same-origin Access-authenticated
   viewers to rename display labels only. The fixed URL and original Aion files
   do not change. It defaults to false; admin enable/disable/removal remain

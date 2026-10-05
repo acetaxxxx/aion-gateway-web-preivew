@@ -19,8 +19,9 @@ test('homepage discovers Shared Team HTML, viewer renames its label, stable link
     mkdir(join(data, 'reports'), { recursive: true }),
   ]);
   await writeFile(join(teamProject, 'index.html'), '<h1>Team screen version one</h1>');
-  await writeFile(join(teamProject, 'settings.json'), '{"password":"private"}');
-  await writeFile(join(teamProject, 'token.txt'), 'private token');
+  await writeFile(join(teamProject, 'data.json'), '{"message":"Shared preview data"}');
+  await writeFile(join(teamProject, 'readme.txt'), 'Shared preview notes');
+  await writeFile(join(teamProject, 'token.txt'), 'must stay private');
   await writeFile(join(sibling, 'index.html'), '<h1>Other Team private page</h1>');
   await symlink(sibling, join(teamRoot, 'team-1', 'escape'));
   await writeFile(join(data, 'credentials', 'index.html'), '<h1>Must stay hidden</h1>');
@@ -68,9 +69,16 @@ test('homepage discovers Shared Team HTML, viewer renames its label, stable link
     await expect(frame.locator('h1')).toHaveText('Team screen version one');
     await expect(page.locator('#chat-panel')).toBeHidden();
     const slug = new URL(stableUrl, origin).pathname.split('/').at(-1);
-    const sensitiveJson = await page.request.get(`${origin}/preview/${slug}/settings.json`);
-    const sensitiveText = await page.request.get(`${origin}/preview/${slug}/token.txt`);
-    assertPrivateAssetStatuses(sensitiveJson.status(), sensitiveText.status());
+    const jsonAsset = await page.request.get(`${origin}/preview/${slug}/data.json`);
+    const textAsset = await page.request.get(`${origin}/preview/${slug}/readme.txt`);
+    expect(jsonAsset.status()).toBe(200);
+    expect(jsonAsset.headers()['content-type']).toContain('application/json');
+    expect(await jsonAsset.json()).toEqual({ message: 'Shared preview data' });
+    expect(textAsset.status()).toBe(200);
+    expect(textAsset.headers()['content-type']).toContain('text/plain');
+    expect(await textAsset.text()).toBe('Shared preview notes');
+    const privateText = await page.request.get(`${origin}/preview/${slug}/token.txt`);
+    expect(privateText.status()).toBe(404);
     const crossTeam = await page.request.get(`${origin}/preview/${slug}/escape/index.html`, { headers: { 'sec-fetch-dest': 'iframe' } });
     expect([400, 404]).toContain(crossTeam.status());
 
@@ -100,8 +108,3 @@ test('homepage discovers Shared Team HTML, viewer renames its label, stable link
     await rm(root, { recursive: true, force: true });
   }
 });
-
-function assertPrivateAssetStatuses(jsonStatus, textStatus) {
-  expect(jsonStatus).toBe(404);
-  expect(textStatus).toBe(404);
-}
