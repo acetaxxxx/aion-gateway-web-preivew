@@ -26,6 +26,9 @@ export function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? 3000),
     previewScanRoot: required('PREVIEW_SCAN_ROOT', env.PREVIEW_SCAN_ROOT),
+    dataPreviewScanRoot: env.PREVIEW_DATA_SCAN_ROOT?.trim() || undefined,
+    dataAgentWorkspaceRoot: env.AION_DATA_WORKSPACE_ROOT?.trim() || undefined,
+    catalogRenameAllowed: env.GATEWAY_CATALOG_RENAME_ALLOWED === 'true',
     dataDir: required('GATEWAY_DATA_DIR', env.GATEWAY_DATA_DIR),
     accessTeamDomain: teamDomain,
     accessAudience: required('CF_ACCESS_AUDIENCE', env.CF_ACCESS_AUDIENCE),

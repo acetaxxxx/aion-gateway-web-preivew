@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { lstat, readdir, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
-import { resolveRegisteredPreview } from './filesystem.mjs';
+import { lstat, readdir, realpath, stat } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { resolveRegisteredPreview, verifyPreviewFile } from './filesystem.mjs';
 
 async function revision(directory) {
   const hash = createHash('sha256');
@@ -77,7 +77,14 @@ export class PreviewChanges {
       let next;
       try {
         const preview = await resolveRegisteredPreview(this.config, entry);
-        next = { revision: await revision(preview.directory), available: true };
+        const entryPath = await verifyPreviewFile(preview.directory, resolve(preview.directory, preview.entryFile));
+        try {
+          next = { revision: await revision(preview.directory), available: true, liveReloadAvailable: true };
+        } catch {
+          // A bounded polling failure does not make a valid HTML entry vanish.
+          const info = await stat(entryPath);
+          next = { revision: `entry-${info.mtimeMs}-${info.size}`, available: true, liveReloadAvailable: false };
+        }
       } catch {
         next = { revision: 'unavailable', available: false };
       }
