@@ -96,7 +96,7 @@ test('preview paths reject traversal and content is framed with sandbox-compatib
   assert.match(html.headers.get('content-type'), /text\/html/);
 
   const previewPage = await fetch(`${origin}/p/${entry.slug}`, { headers: headers('viewer') });
-  assert.match(await previewPage.text(), /sandbox="allow-scripts"/);
+  assert.match(await previewPage.text(), /sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"/);
 
   const traversal = await fetch(`${origin}/preview/${entry.slug}/%2e%2e/%2e%2e/gateway/previews.json`, { headers: headers('viewer') });
   assert.ok([400, 404].includes(traversal.status));

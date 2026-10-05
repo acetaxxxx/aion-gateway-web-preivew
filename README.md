@@ -78,7 +78,11 @@ MCP enrollment or manual registration. Existing chat and MCP previews remain.
   live reload and should be registered as a smaller output directory. Symlinked
   files are excluded from polling.
 - The preview URL does not reveal a filesystem path. HTML is rendered in an
-  iframe with `sandbox="allow-scripts"` and without `allow-same-origin`.
+  opaque-origin iframe with
+  `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"`. Links
+  that explicitly use a new browsing context can open a normal popup after a
+  user click; ordinary links retain their authored in-frame behavior. The
+  preview frame itself never gains `allow-same-origin`.
 - The app has no write route for Aion files. Its container should run as the
   unprivileged `node` user with the Aion volume mounted `:ro`.
 
