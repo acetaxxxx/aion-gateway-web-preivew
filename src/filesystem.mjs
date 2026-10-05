@@ -100,22 +100,16 @@ export async function resolveRegisteredPreview(config, entry, options) {
 export async function verifyRegisteredFile(config, entry, requestedPath) {
   const preview = await resolveRegisteredPreview(config, entry);
   const filePath = resolvePreviewFile(preview.directory, requestedPath || preview.entryFile);
-  if (entry.workspaceScope === 'data') {
-    if (!allowedSegments(relative(preview.directory, filePath).split(sep).join('/'))) {
+  if (entry.workspaceScope === 'data' || entry.autoDiscovered) {
+    const dataRoot = await realpath(config.dataPreviewScanRoot ?? preview.root);
+    if (!isWithin(dataRoot, filePath)
+      || !allowedSegments(relative(dataRoot, filePath).split(sep).join('/'))
+      || !DATA_ASSETS.has(extname(filePath).toLowerCase())) {
       throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
     }
-    await rejectSymlinkHops(preview.root, filePath);
+    await rejectSymlinkHops(dataRoot, filePath);
   }
-  const target = await verifyPreviewFile(preview.directory, filePath);
-  if (entry.workspaceScope === 'data') {
-    if (!DATA_ASSETS.has(extname(target).toLowerCase())) throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
-    const teamPath = config.teamPreviewScanRoot && relative(resolve(config.teamPreviewScanRoot), filePath);
-    if (teamPath && teamPath !== '..' && !teamPath.startsWith(`..${sep}`) && !isAbsolute(teamPath)) {
-      const teamRoot = resolve(config.teamPreviewScanRoot, teamPath.split(sep)[0]);
-      if (await realpath(teamRoot) !== teamRoot || !isWithin(teamRoot, target)) throw Object.assign(new Error('Preview file is not available'), { statusCode: 404 });
-    }
-  }
-  return target;
+  return verifyPreviewFile(preview.directory, filePath);
 }
 
 export async function discoverHtml(scanRoot) {

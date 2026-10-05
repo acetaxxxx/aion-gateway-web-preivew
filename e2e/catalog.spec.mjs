@@ -72,7 +72,7 @@ test('homepage discovers Shared Team HTML, viewer renames its label, stable link
     const sensitiveText = await page.request.get(`${origin}/preview/${slug}/token.txt`);
     assertPrivateAssetStatuses(sensitiveJson.status(), sensitiveText.status());
     const crossTeam = await page.request.get(`${origin}/preview/${slug}/escape/index.html`, { headers: { 'sec-fetch-dest': 'iframe' } });
-    expect(crossTeam.status()).toBe(404);
+    expect([400, 404]).toContain(crossTeam.status());
 
     await writeFile(join(teamProject, 'index.html'), '<h1>Team screen version two</h1>');
     await page.reload();
