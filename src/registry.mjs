@@ -78,6 +78,8 @@ export class PreviewRegistry {
       if (index < 0) return false;
       entries[index].removed = true;
       entries[index].enabled = false;
+      delete entries[index].conversationId;
+      delete entries[index].teamId;
       entries[index].updatedAt = new Date().toISOString();
       return true;
     });

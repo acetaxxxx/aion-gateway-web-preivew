@@ -44,7 +44,7 @@ test('homepage discovers Shared Team HTML, viewer renames its label, stable link
   try {
     await page.goto(origin);
     const cards = page.locator('#preview-list .preview-card');
-    await expect(cards).toHaveCount(2);
+    await expect(cards).toHaveCount(3);
     await expect(page.getByText('credentials', { exact: false })).toHaveCount(0);
     const teamCard = cards.filter({ hasText: 'team-1/project/index.html' });
     await expect(teamCard).toHaveCount(1);

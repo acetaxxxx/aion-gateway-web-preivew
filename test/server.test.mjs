@@ -127,8 +127,10 @@ test('catalog management preserves URLs on rename and files on removal', async (
   assert.match(await readFile(join(config.previewScanRoot, 'owner', 'project', 'index.html'), 'utf8'), /parent.postMessage/);
 });
 
-test('authenticated viewers can rename only the catalog label when shared rename is enabled', async () => {
-  const entry = await registry.add({ relativePath: 'owner/project', title: 'Stable label' });
+test('authenticated viewers can rename only the catalog label when shared rename is enabled', async (t) => {
+  config.catalogRenameAllowed = true;
+  t.after(() => { config.catalogRenameAllowed = false; });
+  const entry = await registry.add({ relativePath: 'rename/project', title: 'Stable label' });
   const path = `${origin}/api/previews/${entry.slug}`;
   const renamed = await fetch(path, {
     method: 'PATCH', headers: { ...headers('viewer'), 'content-type': 'application/json' },

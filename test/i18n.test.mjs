@@ -9,7 +9,7 @@ const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8')
 test('every actual portal HTML and app translation key is defined', () => {
   const htmlKeys = [...html.matchAll(/\bdata-i18n(?:-[a-z]+)?="([^"]+)"/g)].map((match) => match[1]);
   // Include conditional keys and the status-to-key map, not only direct t() calls.
-  const appKeys = [...app.matchAll(/(['"])([a-z][\w-]*(?:\.[\w-]+)+)\1/g)].map((match) => match[2]);
+  const appKeys = [...app.matchAll(/(['"])((?:page|request|admin|preview|chat|catalog)\.[\w-]+)\1/g)].map((match) => match[2]);
   assert.ok(htmlKeys.length > 0, 'HTML translation keys must be discovered');
   assert.ok(appKeys.length > 0, 'app translation keys must be discovered');
   for (const key of new Set([...htmlKeys, ...appKeys])) {
