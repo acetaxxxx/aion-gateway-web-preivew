@@ -1,4 +1,5 @@
 import { locale, t, translatePage } from './i18n.js';
+import { shouldReloadPreview } from './preview-revision.js';
 
 translatePage();
 
@@ -198,6 +199,7 @@ async function showPreview() {
   const frame = document.querySelector('#preview-frame');
   const status = document.querySelector('#preview-status');
   let liveReloadAvailable = true;
+  let renderedRevision;
   let previewEvents = null;
   const autoRefresh = document.querySelector('#auto-refresh');
   if (entry.status === 'ready') {
@@ -216,7 +218,10 @@ async function showPreview() {
       return;
     }
     frame.classList.remove('hidden');
-    frame.src = state.revision === undefined ? previewUrl : `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
+    if (shouldReloadPreview(state.revision, renderedRevision, frame.hasAttribute('src'))) {
+      frame.src = state.revision === undefined ? previewUrl : `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
+      renderedRevision = state.revision;
+    }
     liveReloadAvailable = state.liveReloadAvailable !== false;
     status.textContent = t(liveReloadAvailable ? 'preview.connected' : 'preview.manualRefresh');
   }
