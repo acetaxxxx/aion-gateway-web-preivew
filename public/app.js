@@ -198,6 +198,8 @@ async function showPreview() {
   const frame = document.querySelector('#preview-frame');
   const status = document.querySelector('#preview-status');
   let liveReloadAvailable = true;
+  let previewEvents = null;
+  const autoRefresh = document.querySelector('#auto-refresh');
   if (entry.status === 'ready') {
     frame.src = previewUrl;
     status.textContent = t('preview.loaded');
@@ -205,7 +207,6 @@ async function showPreview() {
     frame.classList.add('hidden');
     status.textContent = t('preview.waitingForAgent');
   }
-  const events = new EventSource(`/api/previews/${encodeURIComponent(entry.slug)}/events`);
   function update(event) {
     const state = JSON.parse(event.data);
     if (!state.available) {
@@ -219,18 +220,36 @@ async function showPreview() {
     liveReloadAvailable = state.liveReloadAvailable !== false;
     status.textContent = t(liveReloadAvailable ? 'preview.connected' : 'preview.manualRefresh');
   }
-  events.addEventListener('ready', update);
-  events.addEventListener('reload', update);
-  events.addEventListener('disabled', () => {
-    events.close(); frame.removeAttribute('src'); frame.classList.add('hidden');
-    status.textContent = t('preview.disabledNotice');
+  function connectPreviewEvents() {
+    if (!autoRefresh.checked || previewEvents) return;
+    const events = new EventSource(`/api/previews/${encodeURIComponent(entry.slug)}/events`);
+    previewEvents = events;
+    events.addEventListener('ready', update);
+    events.addEventListener('reload', update);
+    events.addEventListener('disabled', () => {
+      events.close();
+      if (previewEvents === events) previewEvents = null;
+      frame.removeAttribute('src'); frame.classList.add('hidden');
+      status.textContent = t('preview.disabledNotice');
+    });
+    events.onerror = () => {
+      status.textContent = t(frame.hasAttribute('src')
+        ? liveReloadAvailable ? 'preview.reconnectingManual' : 'preview.manualRefresh'
+        : 'preview.reconnecting');
+    };
+  }
+  autoRefresh.addEventListener('change', () => {
+    if (autoRefresh.checked) {
+      status.textContent = t('preview.connecting');
+      connectPreviewEvents();
+    } else {
+      previewEvents?.close();
+      previewEvents = null;
+      status.textContent = t('preview.autoRefreshPaused');
+    }
   });
-  events.onerror = () => {
-    status.textContent = t(frame.hasAttribute('src')
-      ? liveReloadAvailable ? 'preview.reconnectingManual' : 'preview.manualRefresh'
-      : 'preview.reconnecting');
-  };
-  window.addEventListener('pagehide', () => events.close(), { once: true });
+  connectPreviewEvents();
+  window.addEventListener('pagehide', () => previewEvents?.close(), { once: true });
   const chatBound = entry.chatBound ?? Boolean(entry.conversationId || entry.teamId);
   if (chatBound) {
     document.querySelector('#chat-toggle').classList.remove('hidden');

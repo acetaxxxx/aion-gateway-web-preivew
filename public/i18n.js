@@ -23,6 +23,8 @@ const translations = {
   'admin.directoriesUpdated': '目錄清單已更新。',
   'preview.openNewTab': '在新分頁開啟',
   'preview.reload': '重新載入預覽',
+  'preview.autoRefresh': '自動更新',
+  'preview.autoRefreshPaused': '自動更新已暫停；可手動重新整理。',
   'preview.connecting': '正在連接即時預覽…',
   'preview.loaded': '預覽已載入；可重新整理查看最新內容。',
   'preview.manualRefresh': '預覽可用；即時更新暫不可用，請手動重新整理查看最新內容。',

@@ -41,7 +41,10 @@ select, input { min-width: 0; border: 1px solid #d4dfd7; border-radius: 10px; pa
 .empty-state { margin: 1.25rem 0 0; color: #718177; }
 .preview-shell { overflow: hidden; }
 .preview-toolbar { min-height: 3.25rem; padding: 0.65rem 1rem; background: #fff; font-size: 0.88rem; }
-.preview-toolbar span { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.preview-toolbar > span { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.auto-refresh-toggle { display: inline-flex; align-items: center; gap: 0.4rem; margin: 0; color: #52675c; font-size: 0.76rem; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.auto-refresh-toggle input { width: 1rem; height: 1rem; min-width: 1rem; margin: 0; accent-color: #176b4d; cursor: pointer; }
+.auto-refresh-toggle input:focus-visible { outline: 2px solid #176b4d; outline-offset: 2px; }
 iframe { display: block; width: 100%; height: min(76vh, 900px); border: 0; border-top: 1px solid #e4ebe6; background: #fff; }
 .icon-button { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; padding: 0; border-radius: 9px; background: #e4ebe6; color: #244536; font-size: 1.25rem; line-height: 1; }
 .chat-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -71,5 +74,6 @@ body.preview-mode .chat-panel:not(.hidden) { position: fixed; z-index: 10; right
   body.preview-mode .preview-toolbar { padding: 0 7px; gap: 6px; }
   body.preview-mode #preview-name { max-width: 24vw; font-size: 0.75rem; }
   body.preview-mode #preview-status { font-size: 0.68rem; }
+  body.preview-mode .auto-refresh-toggle { gap: 0.25rem; font-size: 0.68rem; }
   body.preview-mode #chat-toggle { max-width: 80px; padding: 0.45rem; font-size: 0.68rem; }
 }
