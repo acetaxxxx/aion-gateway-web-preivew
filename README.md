@@ -70,8 +70,12 @@ MCP enrollment or manual registration. Existing chat and MCP previews remain.
   SSE snapshots every second; this is not a token-by-token stream.
 - `/api/previews/<slug>/events` sends authenticated SSE updates. Gateway polls
   only previews with connected viewers, debounces file changes, and detects
-  HTML/CSS/JS/assets changes on bind mounts. The shell reloads its iframe without
-  changing the public URL. Missing entry files show a waiting state and recover
+  HTML/CSS/JS/assets changes on bind mounts. The preview toolbar's auto-refresh
+  switch defaults on and controls only that viewer's SSE subscription and
+  iframe reloads. Pausing it closes the subscription; resuming reconnects and
+  loads the current revision. Manual refresh remains available while paused.
+  The shell reloads its iframe without changing the public URL. Missing entry
+  files show a waiting state and recover
   when the Agent recreates them. Disabled previews close the stream. Connections
   reconnect every minute to recheck Access identity; reconnect also loads the
   latest revision. A preview exceeding 5,000 scanned entries is unavailable to

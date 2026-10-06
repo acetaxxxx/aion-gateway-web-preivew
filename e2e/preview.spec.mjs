@@ -69,6 +69,16 @@ test(`${scope} Agent creates a website and returns a link that updates HTML, CSS
     await expect(preview.locator('h1')).toHaveText('First version');
     await expect(preview.locator('h1')).toHaveCSS('color', 'rgb(0, 128, 0)');
     await expect(preview.locator('#script-output')).toHaveText('Script one');
+    await expect(page.locator('#preview-status')).toHaveText('即時預覽已連線，檔案修改後會自動更新。');
+    const autoRefresh = page.locator('#auto-refresh');
+    await expect(autoRefresh).toBeChecked();
+    await autoRefresh.uncheck();
+    await expect(page.locator('#preview-status')).toHaveText('自動更新已暫停；可手動重新整理。');
+    await writeFile(join(project, 'index.html'), html('Updated while paused'));
+    await page.waitForTimeout(400);
+    await expect(preview.locator('h1')).toHaveText('First version');
+    await autoRefresh.check();
+    await expect(preview.locator('h1')).toHaveText('Updated while paused');
     expect(await preview.locator('body').evaluate(() => {
       try { return parent.document.body !== undefined; } catch { return false; }
     })).toBe(false);
