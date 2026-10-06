@@ -15,6 +15,7 @@ const previewSlug = document.body.dataset.previewSlug;
 let catalog = [];
 let catalogAdmin = false;
 let activePreviewUrl = '';
+let manualPreviewRefresh = null;
 
 async function request(path, options) {
   const response = await fetch(path, {
@@ -209,7 +210,7 @@ async function showPreview() {
     frame.classList.add('hidden');
     status.textContent = t('preview.waitingForAgent');
   }
-  function update(event) {
+  function update(event, forceReload = false) {
     const state = JSON.parse(event.data);
     if (!state.available) {
       frame.removeAttribute('src');
@@ -218,12 +219,14 @@ async function showPreview() {
       return;
     }
     frame.classList.remove('hidden');
-    if (shouldReloadPreview(state.revision, renderedRevision, frame.hasAttribute('src'))) {
+    if (forceReload || shouldReloadPreview(state.revision, renderedRevision, frame.hasAttribute('src'))) {
       frame.src = state.revision === undefined ? previewUrl : `${previewUrl}?v=${encodeURIComponent(state.revision)}`;
       renderedRevision = state.revision;
     }
     liveReloadAvailable = state.liveReloadAvailable !== false;
-    status.textContent = t(liveReloadAvailable ? 'preview.connected' : 'preview.manualRefresh');
+    status.textContent = autoRefresh.checked
+      ? t(liveReloadAvailable ? 'preview.connected' : 'preview.manualRefresh')
+      : t('preview.autoRefreshPaused');
   }
   function connectPreviewEvents() {
     if (!autoRefresh.checked || previewEvents) return;
@@ -253,8 +256,36 @@ async function showPreview() {
       status.textContent = t('preview.autoRefreshPaused');
     }
   });
+  let manualRefreshEvents = null;
+  manualPreviewRefresh = () => {
+    if (autoRefresh.checked) {
+      frame.src = `${previewUrl}?v=${Date.now()}`;
+      return;
+    }
+    manualRefreshEvents?.close();
+    const events = new EventSource(`/api/previews/${encodeURIComponent(entry.slug)}/events`);
+    manualRefreshEvents = events;
+    events.addEventListener('ready', (event) => {
+      events.close();
+      if (manualRefreshEvents === events) manualRefreshEvents = null;
+      update(event, true);
+    }, { once: true });
+    events.addEventListener('disabled', () => {
+      events.close();
+      if (manualRefreshEvents === events) manualRefreshEvents = null;
+      frame.removeAttribute('src'); frame.classList.add('hidden');
+      status.textContent = t('preview.disabledNotice');
+    }, { once: true });
+    events.onerror = () => {
+      events.close();
+      if (manualRefreshEvents === events) manualRefreshEvents = null;
+    };
+  };
   connectPreviewEvents();
-  window.addEventListener('pagehide', () => previewEvents?.close(), { once: true });
+  window.addEventListener('pagehide', () => {
+    previewEvents?.close();
+    manualRefreshEvents?.close();
+  }, { once: true });
   const chatBound = entry.chatBound ?? Boolean(entry.conversationId || entry.teamId);
   if (chatBound) {
     document.querySelector('#chat-toggle').classList.remove('hidden');
@@ -282,9 +313,8 @@ async function start() {
 }
 
 document.querySelector('#preview-reload').addEventListener('click', () => {
-  const frame = document.querySelector('#preview-frame');
-  if (!activePreviewUrl || frame.classList.contains('hidden')) return;
-  frame.src = `${activePreviewUrl}?v=${Date.now()}`;
+  if (!activePreviewUrl || document.querySelector('#preview-frame').classList.contains('hidden')) return;
+  manualPreviewRefresh?.();
 });
 
 const chatPanel = document.querySelector('#chat-panel');

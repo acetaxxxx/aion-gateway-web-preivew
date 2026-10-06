@@ -83,6 +83,23 @@ test(`${scope} Agent creates a website and returns a link that updates HTML, CSS
       try { return parent.document.body !== undefined; } catch { return false; }
     })).toBe(false);
     await expect(page.locator('#chat-messages')).toContainText('Hello from Aion');
+
+    let previewDocumentRequests = 0;
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/preview/my-web/index.html') previewDocumentRequests += 1;
+    });
+    await autoRefresh.uncheck();
+    await writeFile(join(project, 'index.html'), html('Manually refreshed while paused'));
+    const requestsBeforeManualRefresh = previewDocumentRequests;
+    await page.locator('#preview-reload').click();
+    await expect(preview.locator('h1')).toHaveText('Manually refreshed while paused');
+    await expect.poll(() => previewDocumentRequests).toBeGreaterThan(requestsBeforeManualRefresh);
+    const requestsAfterManualRefresh = previewDocumentRequests;
+    await autoRefresh.check();
+    await expect(page.locator('#preview-status')).toHaveText('即時預覽已連線，檔案修改後會自動更新。');
+    await page.waitForTimeout(300);
+    expect(previewDocumentRequests).toBe(requestsAfterManualRefresh);
+
     await page.locator('#chat-toggle').click();
     await page.locator('#chat-input').fill('Change the heading');
     await page.locator('#chat-send').click();
