@@ -279,6 +279,8 @@ async function showPreview() {
     events.onerror = () => {
       events.close();
       if (manualRefreshEvents === events) manualRefreshEvents = null;
+      frame.src = `${previewUrl}?v=${Date.now()}`;
+      status.textContent = t('preview.autoRefreshPaused');
     };
   };
   connectPreviewEvents();
