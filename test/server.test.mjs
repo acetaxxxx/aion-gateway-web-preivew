@@ -46,6 +46,9 @@ test('health endpoint is public, application pages require authenticated identit
   assert.equal((await fetch(`${origin}/healthz`)).status, 200);
   assert.equal((await fetch(origin)).status, 401);
   assert.equal((await fetch(origin, { headers: headers('viewer') })).status, 200);
+  const revisionHelper = await fetch(`${origin}/preview-revision.js`, { headers: headers('viewer') });
+  assert.equal(revisionHelper.status, 200);
+  assert.match(revisionHelper.headers.get('content-type'), /javascript/);
 });
 
 test('admin can register a preview and viewers can only see enabled entries', async () => {
